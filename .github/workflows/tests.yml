@@ -1,0 +1,29 @@
+name: Tests
+
+# Pinned to Python 3.10 because the optional `firth` extra (firthlogist)
+# requires Python <3.11 and scikit-learn <1.6 as of this writing — see
+# docs/reproducibility/open_items.md. This is the exact configuration
+# verified to install and pass cleanly (26/26 tests) during development.
+# Widening the matrix to other Python versions has not been verified and
+# should not be claimed as supported until it has.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install CLADE (core + firth extra + dev tools)
+        run: pip install -e ".[firth,dev]"
+
+      - name: Run test suite (synthetic fixtures only — no real dataset required)
+        run: pytest tests/ -v

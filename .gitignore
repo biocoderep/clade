@@ -1,0 +1,79 @@
+# This repository is CLADE the software package (src/clade, tests, configs)
+# only. The manuscripts, detailed analysis log, case-study data/results, and
+# per-module case-study materials stay local/private, not part of the public
+# repo — see docs/repository_audit.md (kept locally, not tracked) for why.
+Manuscripts_and_Reports/
+Module_I_Genomic_Data_Engineering/
+Module_II_Epistatic_Network_Mapping/
+Module_III_ML_and_Forecasting/
+Module_IV_Experimental_Validation/
+Module_V_Deployment_and_Dashboard/
+Papers_collected/
+Ref_genome/
+docs/
+results/
+DATA_AVAILABILITY.md
+.Rhistory
+epicollapse-candidate-validation/
+
+# Raw sequencing data — never commit
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bam.bai
+*.cram
+*.sra
+
+# Large intermediate files (already excluded from this repo — see DATA_AVAILABILITY.md)
+distances.tsv
+distances_filtered.tsv
+distances_final.tsv
+core.full.aln
+*.aln.fai
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments
+.venv/
+venv/
+env/
+clade_test_venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+*~
+
+# Logs (pipeline logs can be huge and are often server-specific — keep the
+# small, curated ones already tracked in Module_IV_Experimental_Validation/,
+# ignore ad-hoc ones dropped elsewhere)
+*.log
+!snippy_core_full_run*.log
+!fasttree_refit*.log
+!pipeline_output.log
+
+# Credentials — should never exist in this repo, but ignore defensively
+.env
+*.pem
+*.key
+credentials.json
+.netrc
+
+# Server-specific / scratch paths
+*.tmp
+.nextflow*
+work/

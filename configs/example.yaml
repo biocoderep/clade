@@ -1,0 +1,14 @@
+# Example configuration for `clade validate`, using the synthetic fixtures
+# in tests/fixtures/. Not yet consumed directly by the CLI (see --config
+# reserved-for-future-use in src/clade/cli.py) — documents the intended
+# shape for when config-file support is added.
+
+genotypes:
+  - tests/fixtures/example_genotypes.csv
+phenotype: tests/fixtures/example_phenotype.tsv
+lineages: tests/fixtures/example_lineages.tsv
+tree: tests/fixtures/tiny_tree.nwk
+candidates:
+  - geneA
+  - geneB
+output: results/example/evidence_table.md

@@ -1,0 +1,29 @@
+# Configuration matching the real bla-OXA-23 / A. baumannii case study.
+#
+# These file paths match what was actually used on the analysis server
+# (~/Epicollapse_project) — see EpiCollapse_Detailed_Analysis_Log.md for
+# the full provenance of every one of them. The underlying data files are
+# NOT included in this repository (see DATA_AVAILABILITY.md): core.vcf,
+# tree.nwk, and distances_final.tsv in particular are large and/or were
+# never mirrored off the analysis server. This file documents the real
+# configuration for reproducibility, not a runnable example — use
+# configs/example.yaml for something you can actually execute locally.
+
+genotypes:
+  - full_candidate_genotypes.csv       # SecA_M21L, DnaA_syn, Phospho_Q154H
+  - remaining_candidates_genotypes.csv # the other 51 candidates
+phenotype: pheno.tsv                   # derived from feature_matrix_final.Rtab's amr_blaOXA-23 row
+lineages: mlst_final.tsv
+tree: tree.nwk                         # SNP-only-alignment-derived — see
+                                        # docs/limitations/phylogenetic_alignment_sensitivity.md
+distances: distances_final.tsv
+candidates:
+  - SecA_M21L
+  - DnaA_syn
+  - Phospho_Q154H
+  - chromosome_segregation_protein_SMC
+  - hypothetical_protein
+  - D-alanyl-D-alanine_carboxypeptidase
+  - DnaK_chaperone
+  - aminotransferase
+output: results/case_study_evidence_table.md

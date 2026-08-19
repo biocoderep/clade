@@ -1,0 +1,18 @@
+name: clade
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - pandas>=2.0
+  - numpy>=1.24
+  - scipy>=1.10
+  - statsmodels>=0.14
+  - scikit-learn>=1.3,<1.6   # pinned <1.6: firthlogist depends on a private
+                              # sklearn API (_validate_data) removed in 1.6+ —
+                              # see docs/reproducibility/open_items.md
+  - dendropy>=5.0
+  - tabulate>=0.9
+  - pip
+  - pip:
+      - firthlogist
