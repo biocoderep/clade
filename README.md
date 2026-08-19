@@ -41,7 +41,7 @@ See `src/clade/classification/disposition.py` for the exact rule, and its docstr
 ## Installation
 
 ```
-git clone <repo-url> && cd CLADE
+git clone https://github.com/biocoderep/clade.git && cd clade
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[firth]"
 ```

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "<your name>" }
+    { name = "Pooja B. N" }
 ]
 keywords = ["bioinformatics", "phylogenetics", "population-genetics", "antimicrobial-resistance", "bacterial-gwas"]
 classifiers = [
@@ -29,6 +29,11 @@ dependencies = [
     "dendropy>=5.0",
     "tabulate>=0.9",
 ]
+
+[project.urls]
+Homepage = "https://github.com/biocoderep/clade"
+Repository = "https://github.com/biocoderep/clade"
+Issues = "https://github.com/biocoderep/clade/issues"
 
 [project.optional-dependencies]
 firth = ["firthlogist"]
