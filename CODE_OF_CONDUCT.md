@@ -4,4 +4,4 @@ This project follows the [Contributor Covenant](https://www.contributor-covenant
 
 In short: be respectful, assume good faith, and focus disagreement on the science and the code — not the person. Harassment, personal attacks, and discriminatory language or behavior are not tolerated.
 
-Reports of unacceptable behavior can be sent to `<CONTACT EMAIL — TO BE ADDED>`.
+Reports of unacceptable behavior can be sent to `bioinfocode4@gmail.com`.

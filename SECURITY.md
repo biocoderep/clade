@@ -4,7 +4,7 @@ CLADE is a research-analysis tool, not a network service — the realistic secur
 
 ## Reporting a vulnerability
 
-If you find a security issue (e.g. unsafe deserialization, a dependency with a known CVE that CLADE pulls in), please email `<CONTACT EMAIL — TO BE ADDED>` rather than opening a public issue, so there's time to address it before disclosure.
+If you find a security issue (e.g. unsafe deserialization, a dependency with a known CVE that CLADE pulls in), please email `bioinfocode4@gmail.com` rather than opening a public issue, so there's time to address it before disclosure.
 
 ## Scope notes
 
