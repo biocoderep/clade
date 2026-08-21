@@ -3,10 +3,10 @@ message: "If you use CLADE, please cite it as below."
 title: "CLADE: Clonal-Lineage-Aware Detection of Epistasis"
 type: software
 authors:
-  - name: "<AUTHOR NAME — TO BE ADDED>"
+  - name: "Pooja B. N"
 version: 0.1.0
 date-released: "<RELEASE DATE — TO BE ADDED>"
-repository-code: "<GITHUB URL — TO BE ADDED>"
+repository-code: "https://github.com/biocoderep/clade"
 license: MIT
 abstract: >
   A six-stage framework for validating candidate compensatory mutations in
@@ -16,7 +16,7 @@ preferred-citation:
   type: article
   title: "CLADE: Clonal-Lineage-Aware Detection of Epistasis — A Six-Stage Framework for Validating Candidate Compensatory Mutations in Bacterial Populations"
   authors:
-    - name: "<AUTHOR NAME — TO BE ADDED>"
+    - name: "Pooja B. N"
   journal: "<JOURNAL — TO BE ADDED ON ACCEPTANCE>"
   year: "<YEAR — TO BE ADDED>"
   doi: "<DOI — TO BE ADDED ON PUBLICATION>"

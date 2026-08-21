@@ -1,0 +1,29 @@
+name: clade_genome_processing
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # snippy and shovill are pinned exactly: these are the two tools with real,
+  # documented version provenance from the original case study (see
+  # CLADE_Complete_Manuscript.md §5.2), and pinning them exactly is what
+  # matters for reproducing that specific analysis.
+  #
+  # Everything else was ALSO exactly pinned originally, which turned out to
+  # be a real bug: combining every tool's exact version simultaneously
+  # over-constrained the solver into a conflict that had nothing to do with
+  # the pipeline logic (vcflib/htslib/samtools/perl-bioperl couldn't all be
+  # satisfied together at those specific pins). Verified via
+  # `mamba env create --dry-run`: with only snippy/shovill pinned and
+  # everything else left to the solver, the full 11-tool, 304-package
+  # environment resolves cleanly.
+  - sra-tools
+  - fastqc
+  - fastp
+  - snippy=4.6.0
+  - shovill=1.4.2
+  - abricate
+  - ncbi-amrfinderplus
+  - mlst
+  - fasttree
+  - dendropy>=5.0
+  - pandas>=2.0

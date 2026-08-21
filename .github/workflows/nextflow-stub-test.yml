@@ -1,0 +1,30 @@
+name: Nextflow Pipeline Stub Test
+
+on:
+  push:
+    branches: [main]
+    paths: ['workflows/nextflow/**']
+  pull_request:
+    paths: ['workflows/nextflow/**']
+
+jobs:
+  stub-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nextflow
+        run: |
+          curl -s https://get.nextflow.io | bash
+          sudo mv nextflow /usr/local/bin/
+
+      - name: Install CLADE (needed by RUN_CLADE, even in stub mode, for -stub-run's channel/import checks)
+        run: pip install -e ".[dev]"
+
+      # No conda, no real bioinformatics tools, no network access, no real
+      # data — same philosophy as CLADE's own synthetic-fixture-only test
+      # suite. This only verifies the pipeline's wiring.
+      - name: Stub-run against the tiny test profile
+        run: |
+          cd workflows/nextflow
+          nextflow run main.nf -stub-run -profile test
