@@ -1,3 +1,11 @@
+"""Disposition-engine tests carried over from the original implementation.
+
+These candidates are all *fully specified* — every stage has an explicit
+result — and the verdicts below are unchanged from the original rule. That is
+the point: the rewritten engine agrees with the original wherever the evidence
+is complete. What changed is only how it treats candidates with missing stages
+(see test_scientific_controls.py), which the original promoted to CONVERGENT.
+"""
 from clade.classification.disposition import Disposition, StageResults, classify_candidate
 
 
@@ -7,10 +15,10 @@ def test_convergent_when_all_applicable_stages_agree():
         stage2_distinct_sts=5, stage2_pct_dominant_st=0.4,
         stage3_correct_direction=True,
         stage4_pct_post_resistance=1.0, stage4_baseline=0.767,
-        stage5_significant=True, stage5_concordant=True,
+        stage5_significant=True, stage5_enriched_in_resistant=True,
         cohort_frequency=0.09,
     )
-    assert classify_candidate(r) == Disposition.CONVERGENT
+    assert classify_candidate(r).disposition is Disposition.CONVERGENT
 
 
 def test_convergent_even_when_single_lineage_if_everything_else_passes():
@@ -21,10 +29,10 @@ def test_convergent_even_when_single_lineage_if_everything_else_passes():
         stage2_distinct_sts=1, stage2_pct_dominant_st=1.0,
         stage3_correct_direction=True,
         stage4_pct_post_resistance=1.0, stage4_baseline=0.767,
-        stage5_significant=True, stage5_concordant=True,
+        stage5_significant=True, stage5_enriched_in_resistant=True,
         cohort_frequency=0.09,
     )
-    assert classify_candidate(r) == Disposition.CONVERGENT
+    assert classify_candidate(r).disposition is Disposition.CONVERGENT
 
 
 def test_unresolved_when_stage5_contradicts_stage3_and_4():
@@ -35,15 +43,15 @@ def test_unresolved_when_stage5_contradicts_stage3_and_4():
         stage2_distinct_sts=47, stage2_pct_dominant_st=0.3,
         stage3_correct_direction=False,
         stage4_pct_post_resistance=0.233, stage4_baseline=0.767,
-        stage5_significant=True, stage5_concordant=False,
+        stage5_significant=True, stage5_enriched_in_resistant=True,
         cohort_frequency=0.05,
     )
-    assert classify_candidate(r) == Disposition.UNRESOLVED
+    assert classify_candidate(r).disposition is Disposition.UNRESOLVED
 
 
 def test_rejected_when_stage1_not_significant():
     r = StageResults(stage1_tested=True, stage1_significant=False, cohort_frequency=0.1)
-    assert classify_candidate(r) == Disposition.REJECTED
+    assert classify_candidate(r).disposition is Disposition.REJECTED
 
 
 def test_rejected_when_wrong_direction_and_no_stage5_contradiction():
@@ -52,10 +60,10 @@ def test_rejected_when_wrong_direction_and_no_stage5_contradiction():
         stage2_distinct_sts=48, stage2_pct_dominant_st=0.17,
         stage3_correct_direction=False,
         stage4_pct_post_resistance=0.143, stage4_baseline=0.767,
-        stage5_significant=False, stage5_concordant=None,
+        stage5_significant=False, stage5_enriched_in_resistant=False,
         cohort_frequency=0.06,
     )
-    assert classify_candidate(r) == Disposition.REJECTED
+    assert classify_candidate(r).disposition is Disposition.REJECTED
 
 
 def test_clonal_artifact_when_single_lineage_and_fails():
@@ -65,14 +73,14 @@ def test_clonal_artifact_when_single_lineage_and_fails():
         stage3_correct_direction=False,
         cohort_frequency=0.02,
     )
-    assert classify_candidate(r) == Disposition.CLONAL_ARTIFACT
+    assert classify_candidate(r).disposition is Disposition.CLONAL_ARTIFACT
 
 
 def test_uninformative_when_near_fixed():
     r = StageResults(stage1_tested=True, stage1_significant=True, cohort_frequency=0.95)
-    assert classify_candidate(r) == Disposition.UNINFORMATIVE
+    assert classify_candidate(r).disposition is Disposition.UNINFORMATIVE
 
 
 def test_not_retested_when_stage1_never_ran():
     r = StageResults(stage1_tested=False, cohort_frequency=0.05)
-    assert classify_candidate(r) == Disposition.NOT_RETESTED
+    assert classify_candidate(r).disposition is Disposition.NOT_RETESTED

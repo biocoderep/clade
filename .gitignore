@@ -79,3 +79,15 @@ credentials.json
 work/
 workflows/nextflow/test_results/
 workflows/nextflow/results/
+
+# --- Manuscript, submission package and case-study data -----------------
+# This repository is the framework and pipeline only. Manuscripts, figures,
+# supplementary tables and any real cohort data live in the separate research
+# repository; nothing here should carry per-isolate data.
+SUBMISSION_CLADE_v2/
+CLADE_Manuscript*.docx
+CLADE_*TECHNICAL_LOG*.md
+firth_bundle/
+firth_dual_pvalue_capture.py
+firth_permutation_null_check.py
+firth_pvalue_arbitration.py
