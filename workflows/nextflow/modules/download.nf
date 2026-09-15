@@ -1,25 +1,39 @@
-// Raw read retrieval — matches pipeline_orchestrator_linux_v2.py step 0 exactly
-// (prefetch + fasterq-dump --split-files + gzip), reconstructed from the real
-// server chain (see CLADE_Complete_Manuscript.md §5.2).
+// Fetch paired-end reads from the SRA by run accession.
+// Network-bound and the most common source of transient failure in a large
+// cohort run, hence the process_network label's extended retry policy.
 process DOWNLOAD {
-    tag "$sample_id"
-    conda "${projectDir}/conda/genome_processing.yml"
+    tag "$accession"
+    label 'process_network'
+
+    conda "bioconda::sra-tools=3.4.1"
+    container "quay.io/biocontainers/sra-tools:3.4.1--h4304569_1"
 
     input:
-    val sample_id
+    val accession
 
     output:
-    tuple val(sample_id), path("${sample_id}_1.fastq.gz"), path("${sample_id}_2.fastq.gz")
+    tuple val(accession), path("${accession}_1.fastq.gz"), path("${accession}_2.fastq.gz"), emit: reads
+    path "versions.yml", emit: versions
 
     script:
     """
-    prefetch ${sample_id} --output-directory raw --max-size 100GB
-    fasterq-dump raw/${sample_id}/${sample_id}.sra --split-files --outdir . --threads ${task.cpus} --force
-    gzip ${sample_id}_1.fastq ${sample_id}_2.fastq
+    prefetch --max-size u --output-directory . ${accession}
+    fasterq-dump --split-files --threads ${task.cpus} --outdir . ${accession}
+    gzip -f ${accession}_1.fastq ${accession}_2.fastq
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        sra-tools: \$( fasterq-dump --version 2>&1 | grep -oP '\\d+\\.\\d+\\.\\d+' | head -1 )
+    END_VERSIONS
     """
 
     stub:
     """
-    touch ${sample_id}_1.fastq.gz ${sample_id}_2.fastq.gz
+    echo -e "@r1\\nACGT\\n+\\nIIII" | gzip > ${accession}_1.fastq.gz
+    echo -e "@r1\\nACGT\\n+\\nIIII" | gzip > ${accession}_2.fastq.gz
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        sra-tools: 3.4.1
+    END_VERSIONS
     """
 }

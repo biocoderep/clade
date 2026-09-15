@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "https://raw.githubusercontent.com/biocoderep/clade/main/workflows/nextflow/nextflow_schema.json",
+  "title": "biocoderep/clade pipeline parameters",
+  "description": "Raw reads to a six-stage CLADE evidence table",
+  "type": "object",
+  "definitions": {
+    "input_output_options": {
+      "title": "Input/output options",
+      "type": "object",
+      "required": ["samplesheet", "reference", "candidates", "resistance_gene"],
+      "properties": {
+        "samplesheet": {
+          "type": "string", "format": "file-path", "mimetype": "text/csv",
+          "description": "CSV with either sample_id,accession or sample_id,fastq_1,fastq_2. Mixed rows allowed."
+        },
+        "reference": {
+          "type": "string", "format": "file-path",
+          "description": "Reference genome FASTA. Candidate positions must be on this coordinate system."
+        },
+        "candidates": {
+          "type": "string", "format": "file-path", "mimetype": "text/csv",
+          "description": "CSV: name,position (1-based). CLADE validates this list; it does not generate it."
+        },
+        "resistance_gene": {
+          "type": "string",
+          "description": "AMRFinderPlus gene symbol defining the binary phenotype, e.g. blaOXA-23."
+        },
+        "outdir": { "type": "string", "format": "directory-path", "default": "results" },
+        "publish_dir_mode": {
+          "type": "string", "default": "copy",
+          "enum": ["copy", "symlink", "link", "rellink", "move"]
+        },
+        "save_fastq":       { "type": "boolean", "default": false, "description": "Publish downloaded raw reads (terabytes at cohort scale)." },
+        "save_trimmed":     { "type": "boolean", "default": false },
+        "save_assemblies":  { "type": "boolean", "default": true },
+        "save_snippy_dirs": { "type": "boolean", "default": false }
+      }
+    },
+    "clade_stage_options": {
+      "title": "CLADE stage options",
+      "type": "object",
+      "properties": {
+        "alpha":           { "type": "number", "default": 0.05, "minimum": 0, "maximum": 1 },
+        "min_carriers":    { "type": "integer", "default": 5, "minimum": 1,
+                             "description": "Below this many carriers a candidate is untestable." },
+        "max_freq":        { "type": "number", "default": 0.85, "minimum": 0, "maximum": 1,
+                             "description": "Above this cohort frequency a candidate is near-fixed and uninformative." },
+        "temporal_margin": { "type": "number", "default": 0.0 },
+        "ambiguity_resolution": {
+          "type": "integer", "default": 0, "enum": [0, 1],
+          "description": "Fitch tie-breaking: 0 DELTRAN-like, 1 ACCTRAN-like. Changes which origins fall either side of the resistance boundary."
+        },
+        "unique_neighbors": {
+          "type": "boolean", "default": false,
+          "description": "Enforce 1:1 matching in Stage 5, trading sample size for independence."
+        },
+        "stage1_results": {
+          "type": "string", "format": "file-path",
+          "description": "Externally computed Stage 1 results (e.g. pyseer). Preferred over the built-in Firth fit."
+        },
+        "stage6": {
+          "type": "string", "format": "file-path",
+          "description": "JSON of manual corroboration findings. Absent, Stage 6 is recorded as missing, never as passed."
+        }
+      }
+    },
+    "tool_options": {
+      "title": "Tool options",
+      "type": "object",
+      "properties": {
+        "abricate_db":           { "type": "string", "default": "ncbi" },
+        "clade_container":       { "type": "string", "default": "ghcr.io/biocoderep/clade:1.0.0" },
+        "skip_fastqc":           { "type": "boolean", "default": false },
+        "skip_multiqc":          { "type": "boolean", "default": false },
+        "skip_amrfinder_update": { "type": "boolean", "default": false }
+      }
+    },
+    "max_job_request_options": {
+      "title": "Resource ceilings",
+      "type": "object",
+      "description": "What this machine has. Every process request is capped to these.",
+      "properties": {
+        "max_cpus":   { "type": "integer", "default": 8 },
+        "max_memory": { "type": "string", "default": "32.GB", "pattern": "^\\d+(\\.\\d+)?\\.?\\s*(K|M|G|T)?B$" },
+        "max_time":   { "type": "string", "default": "48.h",  "pattern": "^(\\d+\\.?\\s*(s|m|h|d|day)\\s*)+$" }
+      }
+    },
+    "generic_options": {
+      "title": "Generic options",
+      "type": "object",
+      "properties": {
+        "help":    { "type": "boolean", "default": false },
+        "version": { "type": "boolean", "default": false }
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/definitions/input_output_options" },
+    { "$ref": "#/definitions/clade_stage_options" },
+    { "$ref": "#/definitions/tool_options" },
+    { "$ref": "#/definitions/max_job_request_options" },
+    { "$ref": "#/definitions/generic_options" }
+  ]
+}

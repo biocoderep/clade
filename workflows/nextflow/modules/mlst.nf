@@ -1,22 +1,36 @@
-// MLST typing on assembly contigs — real command, default scheme
-// auto-detection, unchanged from pipeline_orchestrator_linux_v2.py step 6.
+// Sequence typing. MLST assignments are the lineage covariate for CLADE
+// Stage 1 and the stratum for Stage 2's recurrence check, so this is load-
+// bearing for the population-structure correction, not just descriptive.
 process MLST {
     tag "$sample_id"
-    conda "${projectDir}/conda/genome_processing.yml"
+    label 'process_low'
+
+    conda "bioconda::mlst=2.35.0"
+    container "quay.io/biocontainers/mlst:2.35.0--hdfd78af_0"
 
     input:
     tuple val(sample_id), path(contigs)
 
     output:
-    tuple val(sample_id), path("${sample_id}_mlst.tsv")
+    tuple val(sample_id), path("${sample_id}.mlst.tsv"), emit: report
+    path "versions.yml",                                 emit: versions
 
     script:
     """
-    mlst ${contigs} > ${sample_id}_mlst.tsv
+    mlst --threads ${task.cpus} ${contigs} > ${sample_id}.mlst.tsv
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        mlst: \$( mlst --version 2>&1 | sed 's/mlst //' )
+    END_VERSIONS
     """
 
     stub:
     """
-    printf "${contigs}\\tabaumannii_2\\t1\\n" > ${sample_id}_mlst.tsv
+    echo -e "${sample_id}.fa\\tabaumannii\\t2" > ${sample_id}.mlst.tsv
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        mlst: 2.35.0
+    END_VERSIONS
     """
 }

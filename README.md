@@ -16,7 +16,7 @@ A single structure-corrected association test reduces this problem but does not 
 
 | Stage | Checks | Catches |
 |---|---|---|
-| 1. Structure-corrected association | Kinship-corrected regression (`pyseer`), Firth regression as fallback | Associations that vanish once population structure is accounted for |
+| 1. Structure-corrected association | Kinship-corrected regression (`pyseer`, supplied via `--stage1-results`), Firth regression as fallback | Associations that vanish once population structure is accounted for |
 | 2. Clonal-recurrence | Single lineage vs. many (MLST cross-tab) | "Real recurring pattern" vs. "happened once, inherited ever since" |
 | 3. Effect direction | Is the association enriched (positive) in resistant genomes? | Frequently-skipped check that can disqualify a strong-looking Stage 1 result outright |
 | 4. Temporal ordering | Fitch-parsimony ancestral reconstruction | Candidates that predate resistance (lineage markers, not compensation) |
@@ -29,12 +29,20 @@ A candidate is reported as **convergent** only if it passes every applicable sta
 
 | Disposition | Meaning |
 |---|---|
-| `convergent` | Passes every stage a valid test could be run for |
-| `unresolved` | Stages genuinely disagree (e.g. population-wide evidence says no, local matched-pair evidence says yes) |
-| `rejected` | Consistent negative evidence across ≥2 independent methods |
-| `clonal_artifact` | Statistical signal fully explained by single-lineage concentration |
+| `convergent` | **Explicit positive** result at every stage required for convergence (1, 3, 4, 5) |
+| `unresolved` | Stages genuinely disagree (local matched-pair evidence says yes, population-wide or whole-tree evidence says no) |
+| `rejected` | An explicit negative result at one or more stages |
+| `clonal_artifact` | Signal concentrated in one lineage with no independent recurrence, plus a contradicting stage |
 | `uninformative` | Near-fixed across the cohort regardless of any statistic |
-| `not_individually_retested` | A coverage limitation, not a scientific verdict |
+| `insufficient_evidence` | No stage contradicts, but a required stage produced no usable result |
+| `not_individually_retested` | Stage 1 was never run — a coverage limitation, not a scientific verdict |
+
+**Missing evidence is never treated as support.** Every stage is tri-state
+(`pass` / `FAIL` / `not run`), and a candidate cannot reach `convergent` because
+a stage was skipped, a model failed to converge, or a genotype was uncalled.
+That distinction is what `insufficient_evidence` exists to make: it separates
+"tested and survived" from "never properly tested". The evidence table names the
+missing stages for every candidate.
 
 See `src/clade/classification/disposition.py` for the exact rule, and its docstring for the honest caveat on what it can and can't fully capture for borderline candidates.
 
@@ -51,14 +59,64 @@ pip install -e ".[firth]"
 ## Quick start
 
 ```
+F=tests/fixtures/synthetic_cohort
 clade validate \
-  --genotypes tests/fixtures/example_genotypes.csv \
-  --phenotype tests/fixtures/example_phenotype.tsv \
-  --lineages tests/fixtures/example_lineages.tsv \
-  --candidates geneA geneB \
-  --tree tests/fixtures/tiny_tree.nwk \
-  --output evidence_table.md
+  --genotypes      $F/genotypes.csv \
+  --phenotype      $F/phenotype.tsv \
+  --lineages       $F/lineages.tsv \
+  --candidates     true_compensatory clonal_marker wrong_direction near_fixed \
+  --tree           $F/tree.nwk \
+  --distances      $F/distances.tsv \
+  --stage1-results $F/stage1_results.tsv \
+  --stage6         $F/stage6.json \
+  --output         evidence_table.md
 ```
+
+This runs all five automated stages on a 60-genome synthetic cohort whose
+correct answers are known by construction, and should reproduce exactly:
+
+| Candidate | Disposition | Why |
+|---|---|---|
+| `true_compensatory` | `convergent` | independent origins in several lineages, all post-resistance |
+| `clonal_marker` | `rejected` | one ancestral origin; the association is absorbed by the lineage covariate |
+| `wrong_direction` | `rejected` | depleted among resistant genomes (Stage 3 failure) |
+| `near_fixed` | `uninformative` | present in almost every genome |
+
+**That cohort is software-validation data, not biological evidence** — see
+`tests/fixtures/synthetic_cohort/README.md`. Regenerate it deterministically
+with `python tests/fixtures/make_synthetic_cohort.py`.
+
+Omit `--tree` and `--distances` and the same run yields `insufficient_evidence`
+rather than `convergent`, which is the point: Stages 4 and 5 are recorded as
+*not run*, not as passed.
+
+## From raw reads: the Nextflow pipeline
+
+The CLI above validates a candidate list you already have inputs for. To go
+from raw sequencing reads to an evidence table in one command:
+
+```bash
+nextflow run biocoderep/clade -profile docker \
+    --samplesheet     samples.csv \
+    --reference       reference.fa \
+    --candidates      candidates.csv \
+    --resistance_gene blaOXA-23 \
+    --outdir          results
+```
+
+The pipeline runs read QC, trimming, reference-based variant calling, assembly,
+AMR and MLST typing, core-genome alignment, phylogeny, the patristic distance
+matrix, and then CLADE Stages 1–5. Every tool is pinned to an exact version and
+available as a container; `results/pipeline_info/software_versions.yml` records
+what actually ran.
+
+Verify the wiring in five seconds, with no tools, data or network:
+
+```bash
+cd workflows/nextflow && nextflow run main.nf -profile test -stub-run
+```
+
+Full documentation: [`workflows/nextflow/README.md`](workflows/nextflow/README.md).
 
 ## Input format
 
@@ -75,8 +133,29 @@ A Markdown evidence table, one row per candidate, grouped by disposition — eve
 ## Reproducibility
 
 - `pyproject.toml` / `environment.yml` / `requirements.txt` pin exact version constraints.
-- 26 tests (unit + integration), synthetic fixtures only — CI never depends on a real dataset. Run locally with `pytest tests/`.
+- 108 tests (unit + integration), synthetic fixtures only — CI never depends on a real dataset. Run locally with `pytest tests/`.
+- The tests that matter most are the **scientific controls**
+  (`tests/unit/test_scientific_controls.py`) and the planted-truth end-to-end
+  test (`tests/integration/test_cli_smoke.py`): small datasets with known
+  correct answers, so a refactor that breaks the science fails the build even
+  if the code still runs.
 - `ruff check src/ tests/` for linting; both run in CI on every push (`.github/workflows/`).
+- The Nextflow pipeline pins every external tool to an exact version, each
+  available as a BioContainer whose tag is verified to exist. `-profile conda`
+  and `-profile docker` install the same versions. Nothing resolves to `latest`.
+- Every pipeline run writes `software_versions.yml`, collected from the
+  processes themselves rather than from documentation, plus an execution
+  report, trace and DAG under `pipeline_info/`.
+- CI stub-runs the entire pipeline DAG on every push, against both the oldest
+  supported Nextflow version and the current release, and checks `-resume`
+  caches rather than recomputes.
+- All inputs are validated before use (`clade.io.validation`). Malformed input
+  fails with a named cause and a non-zero exit status rather than being
+  silently reinterpreted — non-binary genotype codes, duplicated sample IDs,
+  tree labels that do not match the sample IDs, non-square distance matrices
+  and single-class phenotypes are all refused.
+- Exit codes: `0` completed, `1` usage error, `2` invalid input, `3` missing
+  optional dependency.
 
 ## A note on phenotype provenance
 
@@ -87,6 +166,19 @@ A Markdown evidence table, one row per candidate, grouped by disposition — eve
 - Validated on one organism, one resistance determinant, one real dataset so far — generalization to other organisms or population structures is untested.
 - No wet-lab validation has been performed on any candidate CLADE has reported as convergent; it establishes statistical/phylogenetic convergence, not causal proof.
 - **Stage 4's dependency on tree topology is less bias-proof than might be assumed.** A direct comparison (SNP-only vs. full-alignment core-genome trees, built independently from the identical genome set) found the two disagree substantially in topology — not just branch length — even among high-confidence splits. This is exactly why CLADE requires convergence across multiple stages rather than trusting any one stage, including Stage 4, in isolation.
+- **Stage 5 pairs are not independent.** Nothing prevents one susceptible genome
+  from being the nearest neighbour of many resistant ones, but McNemar's test
+  assumes independent pairs, so its p-value is anticonservative to the degree
+  that reuse occurs. The default (reuse permitted) matches the published
+  analysis; CLADE now *reports* the reuse (`Max_neighbor_reuse`,
+  `N_unique_neighbors`) and offers `--unique-neighbors` for a one-to-one
+  sensitivity check. This is a property of the method, not a bug that has been
+  fixed — read Stage 5 p-values with the reported reuse in hand.
+- **Stage 4 depends on how ambiguous ancestral states are resolved.** The
+  default dates gains as late as possible (DELTRAN-like); `--ambiguity-resolution 1`
+  dates them as early as possible (ACCTRAN-like), and
+  `clade.validation.stage4_temporal_order.temporal_ordering_sensitivity` runs
+  both and flags candidates whose verdict flips between them.
 - Stage 6 (external corroboration) is a manual process by design — `clade.validation.stage6_corroboration.CorroborationRecord` gives it a structured place to be recorded, but does not automate literature or homology search.
 
 ## Citation
@@ -106,4 +198,6 @@ MIT — see [`LICENSE`](LICENSE).
 | [`src/clade/`](src/clade/) | The framework: `io/`, `phylogeny/` (Fitch parsimony), `validation/` (Stages 1–6), `classification/` (disposition rule), `reporting/` (evidence-table generation), `provenance/` (phenotype derivation/verification), `cli.py` |
 | [`tests/`](tests/) | `unit/` (per-module tests, hand-verified synthetic fixtures) and `integration/` (end-to-end CLI smoke test) |
 | [`configs/`](configs/) | `example.yaml` (runnable, matches `tests/fixtures/`) and `case_study.yaml` (documents the real-dataset configuration; not runnable without external data) |
-| [`.github/`](.github/) | CI workflows (tests, lint), issue templates, PR template |
+| [`workflows/nextflow/`](workflows/nextflow/) | End-to-end pipeline: `main.nf`, `modules/` (one per tool), `subworkflows/`, `conf/` (resources, publishing, test profile), `nextflow_schema.json` |
+| [`containers/`](containers/) | `Dockerfile` for the `clade` image, built and published by CI |
+| [`.github/`](.github/) | CI workflows (tests, lint, pipeline stub-run, container build), issue templates, PR template |

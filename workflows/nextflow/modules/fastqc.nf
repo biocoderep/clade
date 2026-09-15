@@ -1,24 +1,37 @@
-// Pre- and post-trim quality control — same module used twice via aliasing
-// (FASTQC as FASTQC_RAW / FASTQC as FASTQC_TRIM), matching the orchestrator's
-// two identical FastQC calls before and after fastp.
+// Read quality control. Included twice by alias (raw and post-trim) so the
+// effect of trimming is visible rather than assumed.
 process FASTQC {
     tag "$sample_id"
-    conda "${projectDir}/conda/genome_processing.yml"
+    label 'process_low'
+
+    conda "bioconda::fastqc=0.12.1"
+    container "quay.io/biocontainers/fastqc:0.12.1--hdfd78af_0"
 
     input:
     tuple val(sample_id), path(r1), path(r2)
 
     output:
-    tuple val(sample_id), path("*_fastqc.html"), path("*_fastqc.zip")
+    tuple val(sample_id), path("*.html"), emit: html
+    path "*.zip",                         emit: zip
+    path "versions.yml",                  emit: versions
 
     script:
     """
-    fastqc -o . -t 2 ${r1} ${r2}
+    fastqc --threads ${task.cpus} --outdir . ${r1} ${r2}
+
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        fastqc: \$( fastqc --version | sed 's/FastQC v//' )
+    END_VERSIONS
     """
 
     stub:
     """
-    touch ${r1.baseName}_fastqc.html ${r1.baseName}_fastqc.zip
-    touch ${r2.baseName}_fastqc.html ${r2.baseName}_fastqc.zip
+    touch ${sample_id}_1_fastqc.html ${sample_id}_1_fastqc.zip
+    touch ${sample_id}_2_fastqc.html ${sample_id}_2_fastqc.zip
+    cat <<-END_VERSIONS > versions.yml
+    "${task.process}":
+        fastqc: 0.12.1
+    END_VERSIONS
     """
 }

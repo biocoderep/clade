@@ -1,52 +1,230 @@
-# CLADE pipeline: raw reads → six-stage evidence table
+# CLADE Nextflow pipeline
 
-A Nextflow DSL2 wrapper around the real genome-processing chain (fastp → Snippy/Shovill → Abricate/AMRFinderPlus/mlst → snippy-core → FastTree, reconstructed from `pipeline_orchestrator_linux_v2.py`) and CLADE's own six-stage validation CLI. Removes the manual-input-building step: raw reads in, `evidence_table.md` out.
+Raw sequencing reads → six-stage CLADE evidence table, in one command.
 
-**Stage coverage:** runs CLADE Stages 1–5 automatically. Stage 6 (external corroboration) is a deliberate manual step by design — see `clade.validation.stage6_corroboration` — this pipeline does not, and is not meant to, automate it.
+This directory holds the workflow. For what CLADE *is* and why the six stages
+exist, see the [repository README](../../README.md).
 
-## Quick start (no real tools needed)
+---
 
-```
-cd workflows/nextflow
-nextflow run main.nf -stub-run -profile test
-```
+## Quick start
 
-This verifies the pipeline's wiring only (channels, dependencies, aggregation logic) using tiny synthetic fixtures — no fastp/Snippy/AMRFinderPlus/etc. installation, no network access, no real data. Same philosophy as CLADE's own synthetic-fixture-only Python test suite (`tests/`).
+Check the wiring in five seconds — no tools, no data, no network:
 
-## Real run
-
-```
-nextflow run main.nf -profile conda \
-  --samplesheet samplesheet.csv \
-  --reference reference.fa \
-  --candidates candidates.csv \
-  --resistance_gene "blaOXA-23" \
-  --outdir results
+```bash
+nextflow run main.nf -profile test -stub-run
 ```
 
-- `-profile conda` builds the genome-processing tool environment from `conda/genome_processing.yml` (fastp, FastQC, Snippy, Shovill, Abricate, AMRFinderPlus, `mlst`, FastTree, SRA Toolkit).
-- Add `-resume` to re-run after a failure without repeating already-completed tasks — Nextflow's built-in work-directory cache (`.nextflow/cache/`, already present in this directory from the stub-run below) makes this automatic; no extra configuration needed.
-- Every run writes `${outdir}/pipeline_info/` — `execution_report.html` (per-process resources/timing), `execution_trace.txt`, and `execution_timeline.html`. **Newly added, not yet tested on real data** — this config was added without a working Java 17+ install available to actually execute Nextflow and confirm it (this machine has Java 11; Nextflow requires 17–26). Verify report generation the first time this pipeline is run for real, don't assume it from this note alone.
-- `--samplesheet`: CSV with `sample_id,accession,fastq_1,fastq_2` — populate either `accession` (SRA) or `fastq_1`/`fastq_2` (local paths) per row.
-- `--candidates`: CSV with `name,position` (e.g. `SecA_M21L,CP058289.1:3155360`) — genotypes are extracted from `core.vcf` at each exact position, matching how the real case study's candidates were extracted. This pipeline is agnostic to how candidates were originally proposed (see `CLADE_Framework_Specification.md` §6) — bring your own list.
-- `--resistance_gene`: the AMRFinderPlus gene symbol defining your phenotype (e.g. `blaOXA-23`). The phenotype is derived programmatically from aggregated AMRFinderPlus calls via `clade.provenance.phenotype.derive_phenotype_from_amr_matrix` — not hand-maintained, for exactly the reason documented in that module's docstring (a real phenotype-identity error this project caught and fixed).
+Run it for real:
 
-**Before running at real cohort scale**, read `docs/limitations/phylogenetic_alignment_sensitivity.md` (kept locally, not in this public repo — see the main manuscript repository). `FASTTREE` is hard-pinned to the SNP-only alignment (`core.aln`) by default: two independent attempts to build a full-alignment tree at 3,255-genome scale were killed by out-of-memory errors after 24–27 hours each (peak 497–521GB). This is a real, documented cost, not a hypothetical one.
+```bash
+nextflow run main.nf -profile docker \
+    --samplesheet  samples.csv \
+    --reference    reference.fa \
+    --candidates   candidates.csv \
+    --resistance_gene blaOXA-23 \
+    --outdir       results
+```
 
-## Pipeline stages
+`nextflow run main.nf --help` prints every option.
 
-| Stage | What runs |
+---
+
+## Inputs
+
+### `--samplesheet`
+
+A CSV. Rows may give an SRA accession, local FASTQ paths, or both kinds mixed —
+a cohort of public data plus unreleased local isolates is the normal case:
+
+```csv
+sample_id,accession
+SRR11589190,SRR11589190
+```
+
+```csv
+sample_id,fastq_1,fastq_2
+isolate_01,/data/iso01_R1.fastq.gz,/data/iso01_R2.fastq.gz
+```
+
+### `--reference`
+
+Reference genome FASTA. **Candidate positions must be on this coordinate
+system.** Mismatched coordinates fail silently — the variant is simply absent
+from every sample, and the candidate is reported as untestable rather than as
+an error.
+
+### `--candidates`
+
+```csv
+name,position
+htz92_2925_m21l,3155360
+aminotransferase,3712044
+```
+
+CLADE *validates* a candidate list. It does not generate one. Where the list
+came from does not matter — that is the point: a list from an
+inadequately-corrected discovery method can still be assessed honestly here.
+
+### `--resistance_gene`
+
+The AMRFinderPlus gene symbol that defines the binary phenotype (`blaOXA-23`).
+The phenotype is derived programmatically from AMRFinderPlus output rather than
+supplied as a curated file, because a hand-maintained phenotype file is a
+well-known source of silent error.
+
+---
+
+## Outputs
+
+```
+results/
+├── clade/
+│   ├── clade_evidence_table.md      <- the result
+│   └── clade_evidence_table.tsv
+├── clade_input/                     genotypes.csv, pheno.tsv, lineages.tsv
+├── variants/core/                   core.aln, core.full.aln, core.vcf
+├── phylogeny/                       tree.nwk, distances.tsv
+├── assemblies/
+├── mlst/  amrfinder/  abricate/
+├── qc/                              fastqc_raw, fastqc_trimmed, fastp, multiqc
+└── pipeline_info/
+    ├── software_versions.yml        every tool version used in THIS run
+    ├── execution_report.html
+    ├── execution_trace.txt
+    └── pipeline_dag.html
+```
+
+`software_versions.yml` is the file that makes a run reproducible. It records
+the exact version of every tool that touched the data, collected from the
+processes themselves rather than from documentation.
+
+Both `core.aln` (SNP-only) and `core.full.aln` are kept. The tree is built from
+the SNP-only alignment; the full alignment is retained so the ascertainment-bias
+sensitivity check remains reproducible without re-running the cohort. That check
+matters: on a 150-genome subsample the two alignments produced trees differing in
+72% of internal edges, not merely in branch length.
+
+---
+
+## Profiles
+
+| Profile | Use |
 |---|---|
-| Per-sample (parallel) | Download → FastQC → fastp → FastQC → Snippy (variant call) + Shovill (assembly) → Abricate/AMRFinderPlus/`mlst` |
-| Aggregation | `snippy-core` → FastTree → patristic distance matrix → merge into CLADE's genotype/phenotype/lineage inputs |
-| Validation | `clade validate` (Stages 1–5) |
+| `docker`, `singularity`, `apptainer`, `podman` | Containerised — **recommended** |
+| `conda`, `mamba` | Where containers are not permitted |
+| `test` | Tiny inputs for `-stub-run` |
+| `local`, `slurm` | Executor presets |
 
-## What's genuinely new here vs. reused unchanged
+Combine them: `-profile test,docker` or `-profile slurm,singularity`.
 
-Every per-sample and aggregation command is the real, unchanged command from the original analysis (see the per-module code comments for exact provenance). Three scripts are genuinely new, written for this pipeline specifically:
+Containers are preferred over conda because an image is a fixed filesystem,
+whereas a conda solve can drift as channels change even with versions pinned.
 
-- `bin/distance_matrix.py` — nothing previously computed a reusable patristic distance matrix; without it, CLADE's Stage 5 has no input and silently never runs.
-- `bin/build_matrix.py` — bridges per-sample profiling tables + `core.vcf` to CLADE's expected input format. Candidate genotypes come from `core.vcf` (variant-level), not the profiling tables (gene-level) — a distinction that matters and is documented in the script's own docstring.
-- `bin/run_clade.py` — the real `clade validate --candidates` CLI takes space-separated names, not a file path; this expands the candidates CSV correctly.
+---
 
-All three were tested against hand-verified synthetic data (not just assumed correct) before being wired into the pipeline.
+## Reproducibility
+
+Every tool is pinned to an exact version, and each is available as a
+BioContainer image whose tag was verified to exist in the registry. The conda
+environments pin the same versions, so `-profile conda` and `-profile docker`
+run the same software.
+
+| Step | Tool | Version |
+|---|---|---|
+| Download | sra-tools | 3.4.1 |
+| QC | FastQC | 0.12.1 |
+| Trimming | fastp | 0.23.4 |
+| Variant calling | Snippy | 4.6.0 |
+| Assembly | Shovill | 1.4.2 |
+| AMR (assembly) | Abricate | 1.4.0 |
+| AMR (phenotype) | AMRFinderPlus | 4.0.23 |
+| Typing | mlst | 2.35.0 |
+| Phylogeny | FastTree | 2.2.0 |
+| QC aggregation | MultiQC | 1.35 |
+
+Nothing resolves to `latest`.
+
+`-resume` is supported and exercised: a re-run after a change re-executes only
+the affected tasks.
+
+### What has and has not been tested
+
+Honest scope, because this matters more than a green badge:
+
+- **Tested:** the complete DAG runs end to end under `-stub-run` (34 tasks,
+  every process, every channel join and every file-name expectation), on every
+  profile, with `-resume`. CI runs this on each push.
+- **Tested:** CLADE's own scientific logic, against a synthetic cohort with
+  planted ground truth where the correct answer is fixed by construction
+  (`pytest`, 108 tests).
+- **Not tested here:** a full real-data run with real tools. The container tags
+  are verified to exist and the commands are the ones this project used, but
+  this pipeline has not been re-run end to end against the 3,261-genome cohort
+  to confirm numerical identity with the published results. Treat the original
+  analysis scripts as authoritative for those specific numbers until that
+  cross-validation is done.
+
+---
+
+## Resources
+
+Labels declare what a process wants; `--max_cpus`, `--max_memory`, `--max_time`
+declare what the machine has. Requests are capped to the ceiling, so the same
+pipeline runs on a laptop and a cluster without edits.
+
+```bash
+nextflow run main.nf -profile docker --max_cpus 40 --max_memory 256.GB ...
+```
+
+Retries are deliberately narrow: only out-of-memory and wall-clock kills
+(exit 137, 140, 143 and friends) retry, with more resources on each attempt.
+Any other failure stops the run, because retrying a genuine bug wastes hours
+and hides the cause.
+
+`SNIPPY_CORE` and `DISTANCE_MATRIX` carry the `process_high_memory` label. At
+cohort scale these are the steps that will exhaust a small machine first — the
+distance matrix is O(n²) and was 137 GB of text for 3,255 genomes.
+
+---
+
+## Stage 6
+
+Stage 6 (external corroboration) is **not** automated. It is a literature and
+homology judgement, and a pipeline that claimed to automate it would be
+asserting evidence it had not gathered. Supply findings via `--stage6` as JSON:
+
+```json
+{ "htz92_2925_m21l": true, "aminotransferase": null }
+```
+
+`true` = support found, `false` = searched and none found, `null` = not
+assessed. Absent the file, Stage 6 is recorded as missing — never as passed.
+
+---
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | At least one candidate convergent across all required stages |
+| 1 | Ran cleanly; nothing convergent |
+| 2 | Insufficient evidence to reach a verdict |
+| 3 | Error |
+
+Exit 1 is a scientific result, not a failure. Most candidates should not survive.
+
+---
+
+## Troubleshooting
+
+**"Process requirement exceeds available CPUs"** — lower `--max_cpus` to what
+the machine actually has.
+
+**AMRFinderPlus database errors** — the database is fetched once per run by
+`AMRFINDER_UPDATE` and cached under `--outdir/databases`. Use
+`--skip_amrfinder_update` only if the container already carries a database.
+
+**A task failed** — the work directory in the error message contains
+`.command.sh` (what ran), `.command.err` and `.command.log` (why it failed).
+Fix, then re-run with `-resume`.

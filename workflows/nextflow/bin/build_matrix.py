@@ -47,12 +47,36 @@ def parse_candidates(path: str) -> list[tuple[str, str, int]]:
     return out
 
 
+#: VCF genotype strings meaning "reference allele called here".
+REF_CALLS = frozenset({"0", "0/0", "0|0"})
+#: VCF genotype strings meaning "no call" — the position could not be
+#: genotyped for this sample. These are NOT reference calls.
+NO_CALLS = frozenset({".", "./.", ".|."})
+
+
 def extract_genotypes(vcf_path: str, candidates: list[tuple[str, str, int]]) -> pd.DataFrame:
-    """Extract 0/1 genotype calls at each candidate position from a (multi-sample) VCF."""
+    """Extract 0/1 genotype calls at each candidate position from a (multi-sample) VCF.
+
+    Missing data is preserved as missing, not coerced to absence. Two cases
+    matter, and both used to silently become 0:
+
+    * a **no-call** (`.`, `./.`) means the position could not be genotyped in
+      that sample — usually low coverage. Recording it as 0 asserts the sample
+      does not carry the mutation, which the data does not support, and
+      systematically inflates the non-carrier group.
+    * a candidate position **absent from the VCF entirely** (filtered, or
+      outside the core genome) yields no information about any sample. The
+      whole column is missing, not all-zero.
+
+    CLADE's stages treat a missing genotype as missing throughout: Stage 4
+    reconstructs it as an ambiguous ancestral state, Stage 5 drops the pair,
+    and Stage 1 drops the sample from that candidate's fit.
+    """
     with open(vcf_path) as f:
         samples: list[str] = []
-        rows: dict[str, dict[str, int]] = {name: {} for name, _, _ in candidates}
+        rows: dict[str, dict[str, float]] = {name: {} for name, _, _ in candidates}
         wanted = {(chrom, pos): name for name, chrom, pos in candidates}
+        seen_positions: set[str] = set()
 
         for line in f:
             if line.startswith("##"):
@@ -60,8 +84,10 @@ def extract_genotypes(vcf_path: str, candidates: list[tuple[str, str, int]]) -> 
             if line.startswith("#CHROM"):
                 fields = line.rstrip("\n").split("\t")
                 samples = fields[9:]
+                # Start every candidate as entirely missing. A position never
+                # seen in the VCF stays missing rather than becoming all-zero.
                 for name in rows:
-                    rows[name] = {s: 0 for s in samples}
+                    rows[name] = {s: float("nan") for s in samples}
                 continue
             fields = line.rstrip("\n").split("\t")
             chrom, pos = fields[0], int(fields[1])
@@ -69,10 +95,25 @@ def extract_genotypes(vcf_path: str, candidates: list[tuple[str, str, int]]) -> 
             if key not in wanted:
                 continue
             name = wanted[key]
+            seen_positions.add(name)
             genotype_fields = fields[9:]
             for sample, gt_field in zip(samples, genotype_fields):
                 gt = gt_field.split(":")[0]
-                rows[name][sample] = 0 if gt in ("0", "0/0", ".", "./.") else 1
+                if gt in NO_CALLS:
+                    rows[name][sample] = float("nan")
+                elif gt in REF_CALLS:
+                    rows[name][sample] = 0.0
+                else:
+                    rows[name][sample] = 1.0
+
+    absent = sorted(set(rows) - seen_positions)
+    if absent:
+        print(
+            f"WARNING: {len(absent)} candidate position(s) not present in {vcf_path}: "
+            f"{absent[:5]}{' ...' if len(absent) > 5 else ''}. "
+            "Their genotypes are recorded as missing, not as absent.",
+            file=sys.stderr,
+        )
 
     df = pd.DataFrame(rows)
     df.index.name = "Sample_ID"
