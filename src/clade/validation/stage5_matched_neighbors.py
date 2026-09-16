@@ -79,8 +79,33 @@ def nearest_negative_neighbor(
     tied = sub.eq(min_dist, axis=0).sum(axis=1) > 1
 
     if not unique:
+        # Load-balanced tie-breaking.
+        #
+        # `idxmin` returns the first column at the minimum, so when many
+        # controls are exactly equidistant every case is funnelled to the same
+        # one. That is not a small effect here: in this project's cohort 83% of
+        # matches (2,062 of 2,492) were ties, and the deterministic pick left
+        # 61 unique controls serving all 2,492 pairs with one used 1,491 times.
+        # The matched design collapsed, and with it any claim Stage 5 made.
+        #
+        # Every tied control is by definition equally near, so choosing among
+        # them is free: preferring the least-used one spreads the pairing
+        # across the tied set without altering a single distance. Cases are
+        # visited in sorted order so the assignment stays deterministic.
+        is_min = sub.eq(min_dist, axis=0)
+        usage: dict[str, int] = dict.fromkeys(ordered_negatives, 0)
+        chosen: dict[str, str] = {}
+        for case in sorted(sub.index):
+            options = list(is_min.columns[is_min.loc[case].to_numpy()])
+            if not options:
+                continue
+            # least-used first, then sorted name -- fully deterministic
+            pick = min(options, key=lambda n: (usage[n], n))
+            usage[pick] += 1
+            chosen[case] = pick
+        picked = pd.Series(chosen).reindex(sub.index)
         return pd.DataFrame(
-            {"nearest_neighbor": sub.idxmin(axis=1), "distance": min_dist, "tied": tied}
+            {"nearest_neighbor": picked, "distance": min_dist, "tied": tied}
         )
 
     # Greedy one-to-one: consider candidate pairs in ascending distance order.
