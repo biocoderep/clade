@@ -22,27 +22,39 @@ fisher_fdr_lasso.py. What has been added:
 * `firth_association` checks that the covariate matrix and the data frame are
   aligned on the same index before `pd.concat`, which would otherwise align on
   index and silently introduce NaN rows.
-* `firth_association` no longer reads `firthlogist`'s `pvals_` attribute (the
-  library's built-in profile-likelihood-ratio p-value). A documented forensic
-  investigation (`CLADE_TECHNICAL_LOG_PART2.md` in this project's working
-  history, sections 12-15) found that output numerically unreliable once the
-  covariate design matrix reaches the dimensionality this module actually
-  uses -- 20 lineage-dummy columns plus the tested variant -- returning
-  p-values roughly 100-300x too small on real data, on pure noise, and under
-  permutation alike; a null-permutation calibration run that should show ~5%
-  of candidates passing at alpha=0.05 instead showed 91.7% (33/36) with the
-  library p-value, against ~28% (10/36) with the fix below -- still elevated,
-  attributed there to candidate paralog/linkage correlation and coarse ST
-  pooling, not to this defect. The fix computes a manual Wald p-value from
-  the library's independently-checked `coef_`/`bse_` outputs instead:
-  z = coef/SE, p = 2*(1-Phi(|z|)). This has not been independently
-  re-verified against a live `firthlogist` run from this codebase (the
-  package requires Python <3.11, unavailable in the environment this fix was
-  written in) -- it is applied on the strength of that documented diagnostic,
-  not re-derived from scratch. Anyone re-verifying it: check `bse_` is
-  actually populated when `test_vars=` is passed (the current construction
-  below) -- the log's own verified fix used `skip_pvals=False` without
-  `test_vars`, so this is worth confirming they compose the same way.
+* `firth_association` uses neither of `firthlogist`'s inference outputs.
+
+  An earlier revision of this module replaced the library's profile-likelihood
+  p-value (`pvals_`) with a manual Wald p-value computed from `coef_`/`bse_`.
+  That was wrong, and the note it left asking a future reader to "check `bse_`
+  is actually populated" has now been acted on. Measured against an
+  independent, unpenalised likelihood-ratio test on 37 real candidates
+  (n=3,249, 20 lineage covariates):
+
+      firthlogist `bse_` across all 37 candidates : 0.1200 - 0.1559  (1.3x)
+      true standard error over the same candidates: 0.144  - 23531   (163000x)
+      correlation between them (separation cases excluded): r = -0.18
+
+  `bse_` is effectively a constant. It does not measure the precision of the
+  estimate, so a Wald statistic built from it reduces to |coef| rescaled and
+  carries no information about identifiability. Three unrelated candidates
+  shared `bse_ = 0.119952` to six decimal places. A candidate with complete
+  separation -- coefficient unidentified, true SE ~23,000 -- was assigned
+  p = 3.7e-182.
+
+  A 100-permutation lineage-preserving null confirmed the consequence: with
+  the Wald path, 20.5 of 37 candidates were called significant at q<0.05 when
+  no true association existed. Under Benjamini-Hochberg the expected count
+  under a complete null is approximately zero, not the 5% figure sometimes
+  quoted. The same arbitration found the library's own `pvals_` tracked the
+  independent LRT more closely than the Wald did (median |log10| gap 2.42 vs
+  3.79) -- so the earlier "fix" was worse than what it replaced.
+
+  This module therefore computes its own likelihood-ratio test by refitting
+  the reduced model, and reports the Firth coefficient for direction only.
+  `check_separation` runs first, because where a candidate perfectly predicts
+  the phenotype no method yields a meaningful p-value and the honest output
+  is a flag, not a number.
 """
 from __future__ import annotations
 
@@ -52,6 +64,92 @@ from sklearn.linear_model import LogisticRegression
 from statsmodels.stats.multitest import multipletests
 
 from clade.io.validation import CladeInputError, is_missing, validate_binary
+
+
+def _likelihood_ratio_p(X, y, cand_idx: int) -> float:
+    """Likelihood-ratio test for one column, by refitting without it.
+
+    Computed here rather than taken from firthlogist because both of that
+    library's inference outputs were measured unreliable at this covariate
+    dimensionality (module docstring). Refitting the reduced model and
+    differencing log-likelihoods is slower but is a statistic whose behaviour
+    is known.
+
+    Uses unpenalised logistic regression: the LRT is the quantity being
+    compared, and a penalised fit would change the null distribution of the
+    test statistic without a corresponding correction.
+    """
+    import numpy as np
+    import statsmodels.api as sm
+    from scipy.stats import chi2
+
+    reduced_cols = [i for i in range(X.shape[1]) if i != cand_idx]
+    Xf = sm.add_constant(X, has_constant="add")
+    Xr = sm.add_constant(X[:, reduced_cols], has_constant="add")
+    try:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            full = sm.Logit(y, Xf).fit(disp=0, maxiter=200)
+            red = sm.Logit(y, Xr).fit(disp=0, maxiter=200)
+        stat = 2.0 * (float(full.llf) - float(red.llf))
+        if not np.isfinite(stat) or stat < 0:
+            return float("nan")
+        return float(chi2.sf(stat, 1))
+    except Exception:  # noqa: BLE001 - a non-converging refit is a real outcome here
+        return float("nan")
+
+
+def check_separation(genotype: pd.Series, phenotype: pd.Series) -> dict:
+    """Detect complete or quasi-complete separation from the 2x2 table.
+
+    Separation is when a candidate perfectly (or almost perfectly) predicts the
+    phenotype. The maximum-likelihood coefficient then diverges: it is
+    unbounded, its standard error explodes, and every inference method produces
+    an impressive-looking number that means nothing. Firth's penalty keeps the
+    estimate finite, which is what it is for -- but finite is not the same as
+    identified, and a finite estimate from a separated design still supports no
+    claim about effect size.
+
+    This is checked *before* fitting because every spurious Stage 1 result in
+    this project's case study traced back to it. One candidate with zero
+    susceptible carriers was reported at p = 1.6e-51; its true standard error
+    was 23,425.
+
+    Returns the cell counts, the minimum cell, and a status:
+
+        none        every cell >= 10; standard inference is reasonable
+        quasi       some cell in 1..9; estimates are unstable
+        complete    some cell is 0; the coefficient is not identified
+    """
+    g = validate_binary(genotype, "genotype")
+    y = validate_binary(phenotype, "phenotype", allow_missing=False)
+    both = g.notna() & y.notna()
+    g, y = g[both], y[both]
+
+    n11 = int(((g == 1) & (y == 1)).sum())
+    n10 = int(((g == 1) & (y == 0)).sum())
+    n01 = int(((g == 0) & (y == 1)).sum())
+    n00 = int(((g == 0) & (y == 0)).sum())
+    min_cell = min(n11, n10, n01, n00)
+
+    if min_cell == 0:
+        status = "complete"
+    elif min_cell < 10:
+        status = "quasi"
+    else:
+        status = "none"
+
+    return {
+        "n_carrier_positive": n11,
+        "n_carrier_negative": n10,
+        "n_noncarrier_positive": n01,
+        "n_noncarrier_negative": n00,
+        "min_cell": min_cell,
+        "separation": status,
+        "identifiable": status == "none",
+    }
 
 
 def firth_association(
@@ -105,22 +203,16 @@ def firth_association(
             "Status": "SKIPPED: no carriers",
         }
 
+    # Separation is checked before fitting: where a candidate perfectly
+    # predicts the phenotype the coefficient is not identified, and every
+    # method returns an impressive number that supports no claim.
+    sep = check_separation(cand, pheno)
+
     try:
         fl = FirthLogisticRegression(test_vars=cand_idx)
         fl.fit(X, y)
         coef = fl.coef_[cand_idx]
-        # Deliberately NOT fl.pvals_[cand_idx] -- see the module docstring.
-        # firthlogist's profile-likelihood-ratio p-value is numerically
-        # unreliable at this covariate dimensionality; a manual Wald p-value
-        # from coef_/bse_ is used instead.
-        bse = fl.bse_[cand_idx] if hasattr(fl, "bse_") else float("nan")
-        if is_missing(coef) or is_missing(bse) or bse == 0:
-            pval = float("nan")
-        else:
-            from scipy.stats import norm
-            wald_z = coef / bse
-            pval = float(2 * (1 - norm.cdf(abs(wald_z))))
-        if is_missing(coef) or is_missing(pval):
+        if is_missing(coef):
             return {
                 "Candidate": candidate,
                 "N_carriers": n_carriers,
@@ -128,14 +220,31 @@ def firth_association(
                 "Coef": None,
                 "Firth_p": None,
                 "Status": "FAILED: non-finite estimate",
+                **sep,
             }
+
+        # The p-value comes from an independent likelihood-ratio test, not from
+        # firthlogist. Neither `pvals_` nor a Wald statistic built on `bse_` is
+        # trustworthy here -- see the module docstring for the measurements.
+        # The Firth coefficient is retained for DIRECTION only (Stage 3), where
+        # its sign is reliable even when its magnitude is not.
+        pval = _likelihood_ratio_p(X, y, cand_idx)
+
+        status = "OK"
+        if sep["separation"] == "complete":
+            status = "SEPARATION: coefficient not identified; p-value not reportable"
+            pval = None
+        elif sep["separation"] == "quasi":
+            status = f"QUASI_SEPARATION: min cell {sep['min_cell']}; estimate unstable"
+
         return {
             "Candidate": candidate,
             "N_carriers": n_carriers,
             "N_dropped_missing": n_dropped,
             "Coef": float(coef),
-            "Firth_p": float(pval),
-            "Status": "OK",
+            "Firth_p": None if pval is None or is_missing(pval) else float(pval),
+            "Status": status,
+            **sep,
         }
     except Exception as e:  # noqa: BLE001 - real convergence failures are the point
         return {
@@ -145,6 +254,7 @@ def firth_association(
             "Coef": None,
             "Firth_p": None,
             "Status": f"FAILED: {e}",
+            **sep,
         }
 
 

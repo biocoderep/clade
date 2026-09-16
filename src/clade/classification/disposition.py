@@ -89,16 +89,26 @@ class StageResults:
 
     # ---- derived, tri-state ----
 
-    def stage4_supports(self, temporal_margin: float = 0.10) -> bool | None:
+    def stage4_supports(
+        self, temporal_margin: float = 0.10, min_origins: int = 2
+    ) -> bool | None:
         """True/False if Stage 4 ran and is interpretable, else None.
 
-        Requires at least one reconstructed gain event: a candidate with zero
-        inferred origins yields an undefined percentage, which must not be read
-        as a failure.
+        Requires at least `min_origins` independently reconstructed gain
+        events. One origin is not evidence of temporal ordering: a single
+        event necessarily yields 0% or 100% post-resistance, and 100% from one
+        event is indistinguishable from coincidence. Three candidates in this
+        project's case study were reported at "100% post-resistance" on the
+        strength of exactly one reconstructed origin.
+
+        Zero or one origin therefore returns None -- not evaluable -- never
+        False. Treating "too few events to judge" as a failure is the same
+        missing-as-negative error this class exists to prevent, in the other
+        direction.
         """
         if self.stage4_pct_post_resistance is None or self.stage4_baseline is None:
             return None
-        if self.stage4_total_gains is not None and self.stage4_total_gains == 0:
+        if self.stage4_total_gains is not None and self.stage4_total_gains < min_origins:
             return None
         pct = self.stage4_pct_post_resistance
         if is_missing(pct):
@@ -117,11 +127,13 @@ class StageResults:
             return None
         return bool(self.stage5_enriched_in_resistant)
 
-    def stage_status(self, temporal_margin: float = 0.10) -> dict[str, bool | None]:
+    def stage_status(
+        self, temporal_margin: float = 0.10, min_origins: int = 2
+    ) -> dict[str, bool | None]:
         return {
             "stage1": self.stage1_significant if self.stage1_tested else None,
             "stage3": self.stage3_correct_direction,
-            "stage4": self.stage4_supports(temporal_margin),
+            "stage4": self.stage4_supports(temporal_margin, min_origins),
             "stage5": self.stage5_supports(),
         }
 
@@ -148,6 +160,7 @@ def classify_candidate(
     uninformative_freq_threshold: float = 0.85,
     single_lineage_threshold: float = 0.95,
     temporal_margin: float = 0.10,
+    min_origins: int = 2,
 ) -> DispositionResult:
     """Apply CLADE's disposition rule to one candidate's stage results.
 
@@ -165,7 +178,7 @@ def classify_candidate(
     7. Otherwise (gaps, no conflict)     -> INSUFFICIENT_EVIDENCE
     """
     reasons: list[str] = []
-    status = r.stage_status(temporal_margin)
+    status = r.stage_status(temporal_margin, min_origins)
 
     # 1. Near-fixed candidates are uninformative regardless of any statistic.
     if r.cohort_frequency is not None and r.cohort_frequency >= uninformative_freq_threshold:

@@ -114,6 +114,8 @@ def matched_neighbor_test(
     matches: pd.DataFrame,
     candidate_cols: list[str],
     exact_threshold: int = 25,
+    min_unique_fraction: float = 0.20,
+    min_pairs_for_reuse_check: int = 30,
 ) -> pd.DataFrame:
     """Paired McNemar's test of candidate carriage between each
     phenotype-positive sample and its matched nearest phenotype-negative
@@ -145,6 +147,40 @@ def matched_neighbor_test(
         )
 
     rows = []
+    # --- pseudoreplication guard -------------------------------------------
+    #
+    # McNemar's test assumes independent pairs. Nearest-neighbour matching with
+    # replacement does not produce them: in this project's case study 61 unique
+    # susceptible genomes served all 2,492 pairs, and a single genome anchored
+    # 1,491 of them. Every "discordant pair" supporting one candidate shared
+    # the same control, so a reported p of 1.6e-51 rested on an effective
+    # sample size of one.
+    #
+    # Reporting the reuse figures was not enough -- they were reported, and the
+    # result was quoted anyway. So when the effective sample size is far below
+    # the nominal pair count, the p-value is withheld rather than emitted with
+    # a caveat attached.
+    #
+    # The test is on UNIQUE NEIGHBOURS, not on the reuse of any single one.
+    # Reuse concentrated in one genome and reuse spread evenly across a handful
+    # are the same problem: what matters is how many independent controls the
+    # comparison actually rests on. The check is skipped below
+    # `min_pairs_for_reuse_check` pairs, where heavy reuse is forced by having
+    # few negatives at all and says nothing about the design.
+    n_pairs_total = len(paired)
+    unique_fraction = (n_unique / n_pairs_total) if n_pairs_total else 1.0
+    reuse_excessive = (
+        n_pairs_total >= min_pairs_for_reuse_check
+        and unique_fraction < min_unique_fraction
+    )
+    reuse_note = (
+        f"pseudoreplication: {n_unique} unique neighbours across {n_pairs_total} "
+        f"pairs ({100 * unique_fraction:.1f}% < {100 * min_unique_fraction:.0f}% "
+        f"required); most-reused neighbour anchors {max_reuse}. McNemar assumes "
+        f"independent pairs, so no p-value is reported. Re-run with unique=True, "
+        f"or use a matched-strata conditional model that accounts for reuse."
+    )
+
     for cand in candidate_cols:
         if cand not in genotypes.columns:
             raise CladeInputError(f"candidate '{cand}' is not a column in the genotype matrix.")
@@ -166,7 +202,10 @@ def matched_neighbor_test(
         discordant = pos_only + neighbor_only
         table = [[both, pos_only], [neighbor_only, neither]]
 
-        if discordant == 0:
+        if reuse_excessive:
+            pval = float("nan")
+            note = reuse_note
+        elif discordant == 0:
             # McNemar is undefined with no discordant pairs; NaN, not 1.0.
             pval = float("nan")
             note = "no discordant pairs; McNemar undefined"
@@ -190,7 +229,16 @@ def matched_neighbor_test(
                 # Direction: enriched in the resistant member of the pair.
                 # Plain Python bool: numpy's np.bool_ fails `is True` identity checks
                 # in the disposition engine.
-                "Enriched_in_resistant": (bool(pos_only > neighbor_only) if discordant else None),
+                # Withheld under excessive reuse for the same reason as the
+                # p-value: the direction is decided by whichever control
+                # happens to be reused, not by the cohort.
+                "Enriched_in_resistant": (
+                    None
+                    if (reuse_excessive or not discordant)
+                    else bool(pos_only > neighbor_only)
+                ),
+                "Unique_neighbor_fraction": unique_fraction,
+                "Pseudoreplication_flag": bool(reuse_excessive),
                 "McNemar_p": pval,
                 "McNemar_note": note,
                 "N_pairs_dropped_missing": n_dropped,
