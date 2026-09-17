@@ -116,13 +116,26 @@ class StageResults:
         return pct >= (self.stage4_baseline + temporal_margin)
 
     def stage5_supports(self) -> bool | None:
-        """Stage 5 supports the candidate only if it is both significant and
-        enriched in the resistant member of each pair. Significance alone is
-        direction-free and cannot support a compensatory claim."""
+        """True only if Stage 5 significantly supports the candidate
+        (significant AND enriched in the resistant member of each pair).
+
+        False only for a genuine, statistically supported CONTRADICTION:
+        significant AND depleted in resistant genomes. A non-significant
+        result returns None, not False -- "underpowered" is not the same
+        claim as "wrong direction", and collapsing the two would repeat,
+        inside this one function, exactly the missing-as-negative error this
+        class exists to prevent everywhere else in the framework. This was a
+        real bug, not a hypothetical one: it was caught only when a
+        corrected Stage 5 (conditional logistic regression, replacing a
+        matched-pair test found to be pseudoreplicated) returned p=0.34 for
+        a still-correctly-signed candidate that had previously been
+        significant under the invalid method, and the disposition engine
+        classified that underpowered null as an explicit contradiction.
+        """
         if self.stage5_significant is None:
             return None
         if not self.stage5_significant:
-            return False
+            return None
         if self.stage5_enriched_in_resistant is None:
             return None
         return bool(self.stage5_enriched_in_resistant)
