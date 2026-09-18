@@ -18,6 +18,7 @@ include { RUN_CLADE             } from '../modules/run_clade'
 include { STAGE5_CONDITIONAL    } from '../modules/stage5_conditional'
 include { FWER_PERMUTATION      } from '../modules/fwer_permutation'
 include { BENCHMARK_SINGLE_TEST } from '../modules/benchmark_single_test'
+include { FINAL_VERDICT         } from '../modules/final_verdict'
 
 workflow VALIDATE_FROM_MATRIX {
 
@@ -43,7 +44,12 @@ workflow VALIDATE_FROM_MATRIX {
     )
     ch_versions = ch_versions.mix(RUN_CLADE.out.versions)
 
-    ch_stage5_conditional = Channel.empty()
+    // A named placeholder, not Channel.empty() -- FINAL_VERDICT's second
+    // input needs exactly one value per run either way, and an empty channel
+    // here would leave it waiting forever rather than proceeding without a
+    // conditional Stage 5 result. Matches AGGREGATE_AND_VALIDATE's own
+    // pattern for the same reason.
+    ch_stage5_conditional = Channel.value(file("${projectDir}/assets/NO_STAGE5_CONDITIONAL"))
     if (params.run_stage5_conditional) {
         ch_candidate_names = candidates_file.splitCsv(header: true).map { it.name }.collect()
         STAGE5_CONDITIONAL(genotypes, phenotype, distances, ch_candidate_names)
@@ -65,9 +71,14 @@ workflow VALIDATE_FROM_MATRIX {
         ch_benchmark = BENCHMARK_SINGLE_TEST.out.results
     }
 
+    // --- the pipeline's last word: a candidate, or no candidate ------------
+    FINAL_VERDICT(RUN_CLADE.out.evidence_tsv, ch_stage5_conditional)
+    ch_versions = ch_versions.mix(FINAL_VERDICT.out.versions)
+
     emit:
     evidence_table     = RUN_CLADE.out.evidence_table
     evidence_tsv       = RUN_CLADE.out.evidence_tsv
+    verdict            = FINAL_VERDICT.out.verdict
     stage5_conditional = ch_stage5_conditional
     fwer_summary       = ch_fwer
     benchmark          = ch_benchmark
