@@ -40,9 +40,9 @@ this reason, and does not load anything itself.
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -107,7 +107,7 @@ def stratified_permute_phenotype(
         raise ValueError("phenotype and lineage must share the same index")
 
     permuted = phenotype.copy()
-    for st, group_idx in lineage.groupby(lineage).groups.items():
+    for group_idx in lineage.groupby(lineage).groups.values():
         values = phenotype.loc[group_idx].to_numpy()
         permuted.loc[group_idx] = rng.permutation(values)
     return permuted
