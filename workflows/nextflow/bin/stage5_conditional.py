@@ -153,7 +153,7 @@ def greedy_unique(distances, positives, negatives):
         if row.empty:
             continue
         m = row.min()
-        pick = sorted(row.index[row == m])[0]
+        pick = min(row.index[row == m])
         used.add(pick)
         out.append((case, pick))
     return pd.DataFrame(out, columns=["case", "control"])

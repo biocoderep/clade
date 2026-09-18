@@ -114,7 +114,7 @@ def main() -> int:
         df = df.merge(cl[["Candidate", col]].rename(columns={col: "clade_disposition"}),
                       on="Candidate", how="left")
         hits = df[df.singletest_hit]
-        print(f"\n  What CLADE does with the single-test hits:")
+        print("\n  What CLADE does with the single-test hits:")
         if len(hits):
             print(hits.clade_disposition.value_counts().to_string())
             print(f"\n  Hits CLADE does NOT call convergent: "

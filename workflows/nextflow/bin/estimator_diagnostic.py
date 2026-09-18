@@ -102,7 +102,7 @@ def main() -> int:
             bse = float(model.bse_[-1])
             try:
                 lib_p = float(model.pvals_[-1])
-            except Exception:
+            except Exception:  # noqa: BLE001 - a missing/invalid pvals_ just means 'no library estimate'
                 lib_p = np.nan
             if bse == 0 or np.isnan(bse):
                 wald_z, wald_p = np.nan, np.nan
@@ -112,7 +112,7 @@ def main() -> int:
             rows.append({"Candidate": name, "N_carriers": n_carriers,
                          "Coef": coef, "BSE": bse, "Wald_z": wald_z,
                          "Wald_p": wald_p, "Library_p": lib_p, "Status": "tested"})
-        except Exception as exc:  # a per-candidate failure is data, not a crash
+        except Exception as exc:  # noqa: BLE001 - a per-candidate failure is data, not a crash
             rows.append({"Candidate": name, "N_carriers": n_carriers,
                          "Status": f"failed: {type(exc).__name__}: {exc}"})
 

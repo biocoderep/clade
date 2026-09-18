@@ -98,7 +98,7 @@ def count_convergent(genotypes, phenotype, lineages, workdir, tag, cli_opts,
         cmd += ["--stage1-results", str(cli_opts["stage1_results"])]
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     except FileNotFoundError as exc:
         raise RuntimeError(f"could not launch the CLADE CLI: {exc}") from exc
     if not out_tsv.exists():
@@ -169,7 +169,7 @@ def main() -> int:
 
     # The seed is printed, not just used: a calibration figure that cannot be
     # regenerated exactly is not evidence.
-    print(f"Lineage-preserving permutation null")
+    print("Lineage-preserving permutation null")
     print(f"  samples={len(common)}  candidates={len(candidates)}  "
           f"lineages={lineages.nunique()}")
     print(f"  permutations={args.n_permutations}  scope={args.scope}  seed={args.seed}")
@@ -188,7 +188,7 @@ def main() -> int:
         "stage1_results": args.stage1_results,
     }
 
-    observed, observed_detail, stage1_ran = count_convergent(
+    observed, _observed_detail, stage1_ran = count_convergent(
         genotypes, phenotype, lineages, workdir, "observed", cli_opts,
         candidates, args.tree, args.distances)
     print(f"  observed convergent (real phenotype): {observed}")
@@ -264,7 +264,7 @@ def main() -> int:
         + ("  (Stages 1+3+4+5)" if args.scope == "full" else "  (association only)")
         + ("   [CONDITIONAL: Stage 1 fixed, not recomputed]" if conditional else ""),
         f"Permutations               : {args.n_permutations}   seed={args.seed}",
-        f"Shuffle                    : within lineage (population structure preserved)",
+        "Shuffle                    : within lineage (population structure preserved)",
         "",
         f"Observed convergent        : {observed}",
         f"Null mean convergent       : {null_mean:.3f}",

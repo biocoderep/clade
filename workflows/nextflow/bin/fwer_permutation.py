@@ -102,8 +102,9 @@ def run_screen(geno, y, strata, tree, dist, X0, alpha, baseline, margin, min_ori
         return 0, {}
 
     # --- Stage 5 (matched pairs, conditional) ------------------------------
-    from clade.validation.stage5_matched_neighbors import nearest_negative_neighbor
     from lifelines import CoxPHFitter
+
+    from clade.validation.stage5_matched_neighbors import nearest_negative_neighbor
 
     pos = [s for s in geno.index if pmap[s] == 1]
     neg = [s for s in geno.index if pmap[s] == 0]
@@ -145,7 +146,10 @@ def run_screen(geno, y, strata, tree, dist, X0, alpha, baseline, margin, min_ori
             b = float(cph.summary.loc["carrier", "coef"])
             if p < alpha and b > 0:
                 passed[c] = p
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S112 - one candidate's fit failing is a
+            # real, expected outcome across thousands of permutation refits; it must
+            # not abort the run, and there is nothing informative to log per-failure
+            # at this volume.
             continue
     return len(passed), passed
 
@@ -213,15 +217,15 @@ def main() -> int:
         "FAMILY-WISE ERROR ACROSS THE SIX-STAGE SCREEN",
         "=" * 64,
         f"Permutations              : {args.n_permutations}  (seed {args.seed})",
-        f"Shuffle                   : within lineage",
-        f"Stages evaluated          : 1 (independent LRT) -> 3 -> 4 -> 5 (conditional)",
+        "Shuffle                   : within lineage",
+        "Stages evaluated          : 1 (independent LRT) -> 3 -> 4 -> 5 (conditional)",
         "",
         f"Observed convergent       : {obs}",
         f"Null mean convergent      : {counts.mean():.3f}",
         f"Null distribution         : {[int(c) for c in counts]}",
         "",
         f"FAMILY-WISE ERROR RATE    : {any_rate:.3f}",
-        f"   (fraction of null runs in which ANY candidate reached convergence)",
+        "   (fraction of null runs in which ANY candidate reached convergence)",
         f"Empirical p for observed  : {emp_p:.4f}",
     ]
     text = "\n".join(lines) + "\n"

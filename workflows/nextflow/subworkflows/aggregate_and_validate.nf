@@ -7,7 +7,10 @@ include { SNIPPY_CORE     } from '../modules/snippy_core'
 include { FASTTREE        } from '../modules/fasttree'
 include { DISTANCE_MATRIX } from '../modules/distance_matrix'
 include { BUILD_MATRIX    } from '../modules/build_matrix'
-include { RUN_CLADE       } from '../modules/run_clade'
+include { RUN_CLADE             } from '../modules/run_clade'
+include { STAGE5_CONDITIONAL    } from '../modules/stage5_conditional'
+include { FWER_PERMUTATION      } from '../modules/fwer_permutation'
+include { BENCHMARK_SINGLE_TEST } from '../modules/benchmark_single_test'
 
 workflow AGGREGATE_AND_VALIDATE {
 
@@ -61,10 +64,63 @@ workflow AGGREGATE_AND_VALIDATE {
     )
     ch_versions = ch_versions.mix(RUN_CLADE.out.versions)
 
+    // --- optional deeper validation, off by default ------------------------
+    //
+    // None of these three change CLADE's own evidence table. They are
+    // additional scrutiny of it: a Stage 5 re-analysis that models matched-
+    // pair reuse instead of assuming independence, a permutation estimate of
+    // the whole screen's family-wise error, and a comparison against what a
+    // conventional single-test pipeline would have returned on the same data.
+    // Each re-fits many candidates and is materially slower than RUN_CLADE
+    // itself, hence opt-in.
+    ch_stage5_conditional = Channel.empty()
+    if (params.run_stage5_conditional) {
+        ch_candidate_names = candidates_file
+            .splitCsv(header: true)
+            .map { it.name }
+            .collect()
+        STAGE5_CONDITIONAL(
+            BUILD_MATRIX.out.genotypes,
+            BUILD_MATRIX.out.phenotype,
+            DISTANCE_MATRIX.out.distances,
+            ch_candidate_names
+        )
+        ch_versions = ch_versions.mix(STAGE5_CONDITIONAL.out.versions)
+        ch_stage5_conditional = STAGE5_CONDITIONAL.out.results
+    }
+
+    ch_fwer = Channel.empty()
+    if (params.run_fwer_permutation) {
+        FWER_PERMUTATION(
+            BUILD_MATRIX.out.genotypes,
+            BUILD_MATRIX.out.phenotype,
+            BUILD_MATRIX.out.lineages,
+            FASTTREE.out.tree,
+            DISTANCE_MATRIX.out.distances
+        )
+        ch_versions = ch_versions.mix(FWER_PERMUTATION.out.versions)
+        ch_fwer = FWER_PERMUTATION.out.summary
+    }
+
+    ch_benchmark = Channel.empty()
+    if (params.run_benchmark) {
+        BENCHMARK_SINGLE_TEST(
+            BUILD_MATRIX.out.genotypes,
+            BUILD_MATRIX.out.phenotype,
+            DISTANCE_MATRIX.out.distances,
+            RUN_CLADE.out.evidence_tsv
+        )
+        ch_versions = ch_versions.mix(BENCHMARK_SINGLE_TEST.out.versions)
+        ch_benchmark = BENCHMARK_SINGLE_TEST.out.results
+    }
+
     emit:
-    evidence_table = RUN_CLADE.out.evidence_table
-    evidence_tsv   = RUN_CLADE.out.evidence_tsv
-    tree           = FASTTREE.out.tree
-    core_vcf       = SNIPPY_CORE.out.vcf
-    versions       = ch_versions
+    evidence_table     = RUN_CLADE.out.evidence_table
+    evidence_tsv       = RUN_CLADE.out.evidence_tsv
+    tree               = FASTTREE.out.tree
+    core_vcf           = SNIPPY_CORE.out.vcf
+    stage5_conditional = ch_stage5_conditional
+    fwer_summary       = ch_fwer
+    benchmark          = ch_benchmark
+    versions           = ch_versions
 }
