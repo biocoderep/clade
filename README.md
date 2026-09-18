@@ -198,6 +198,7 @@ MIT — see [`LICENSE`](LICENSE).
 | [`src/clade/`](src/clade/) | The framework: `io/`, `phylogeny/` (Fitch parsimony), `validation/` (Stages 1–6), `classification/` (disposition rule), `reporting/` (evidence-table generation), `provenance/` (phenotype derivation/verification), `cli.py` |
 | [`tests/`](tests/) | `unit/` (per-module tests, hand-verified synthetic fixtures) and `integration/` (end-to-end CLI smoke test) |
 | [`configs/`](configs/) | `example.yaml` (runnable, matches `tests/fixtures/`) and `case_study.yaml` (documents the real-dataset configuration; not runnable without external data) |
-| [`workflows/nextflow/`](workflows/nextflow/) | End-to-end pipeline: `main.nf`, `modules/` (one per tool), `subworkflows/`, `conf/` (resources, publishing, test profile), `nextflow_schema.json` |
+| [`workflows/nextflow/`](workflows/nextflow/) | End-to-end pipeline: `main.nf`, `modules/` (one per tool), `subworkflows/`, `bin/` (scripts each module invokes), `conf/` (resources, publishing, test profile), `nextflow_schema.json` |
+| [`scripts/`](scripts/) | Standalone diagnostic/calibration tools, run by hand, not wired into any pipeline module — each documents a specific investigation (e.g. effective test count under candidate correlation, empirical FDR calibration) |
 | [`containers/`](containers/) | `Dockerfile` for the `clade` image, built and published by CI |
 | [`.github/`](.github/) | CI workflows (tests, lint, pipeline stub-run, container build), issue templates, PR template |
