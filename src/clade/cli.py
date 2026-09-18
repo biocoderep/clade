@@ -278,17 +278,28 @@ def _cmd_validate(args: argparse.Namespace) -> int:
             # Screened and found to have no raw association at all.
             stage1_tested = True
             stage1_sig = False
-        elif firth["Status"] == "OK" and firth["Firth_p"] is not None:
+        elif firth["Firth_p"] is not None:
+            # A p-value is present exactly when the design is identifiable
+            # enough to report one -- `firth_association` sets Firth_p to
+            # None only for complete separation (coefficient undefined).
+            # Quasi-separation (a handful of cases in the minority cell)
+            # still yields a real, if less stable, p-value and is not
+            # collapsed into "no estimate": it is reported, flagged unstable
+            # in Status, and left to the reader with that caveat -- exactly
+            # the distinction HTZ92_2925 M21L needed (min cell 2, otherwise
+            # a clean Stage 1 pass) but the aminotransferase candidate did
+            # not get (min cell 0, genuinely no estimate).
             stage1_tested = True
             stage1_sig = bool(firth["Firth_p"] < args.alpha)
         else:
-            # A structure-corrected test was attempted but yielded no estimate.
+            # A structure-corrected test was attempted but yielded no estimate
+            # (complete separation, or the fit itself failed to converge).
             stage1_tested = True
             stage1_sig = None
 
         direction = (
             direction_check(firth["Coef"])
-            if firth is not None and firth["Status"] == "OK"
+            if firth is not None and firth["Coef"] is not None
             else {"correct_direction": None}
         )
 

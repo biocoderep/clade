@@ -66,18 +66,51 @@ from statsmodels.stats.multitest import multipletests
 from clade.io.validation import CladeInputError, is_missing, validate_binary
 
 
+def _independent_fit(X, y, cand_idx: int) -> dict:
+    """The base Stage 1 computation: an unpenalised logistic fit, its
+    likelihood-ratio p-value, and its coefficient -- all from `statsmodels`,
+    none from `firthlogist`.
+
+    This exists as the *required* computation, not a fallback, because it is
+    the only one of the two available fits whose behaviour at this covariate
+    dimensionality has actually been measured (module docstring): `firthlogist`
+    has no role in it at all, so a machine without that package installed
+    (Python >=3.11, where it cannot even be built -- see §5.14) still gets a
+    real Stage 1 result rather than a hard failure. When `firthlogist` *is*
+    importable, `firth_association` additionally fits it and prefers its
+    coefficient (Firth's penalty gives a more stable point estimate near
+    separation); the p-value below is used either way.
+
+    Returns `coef`/`se`/`lrt_p` as NaN, not raising, when the refit itself
+    fails to converge -- a per-candidate fit failure is data, not a crash.
+    """
+    import numpy as np
+    import statsmodels.api as sm
+    from scipy.stats import chi2
+
+    reduced_cols = [i for i in range(X.shape[1]) if i != cand_idx]
+    Xf = sm.add_constant(X, has_constant="add")
+    Xr = sm.add_constant(X[:, reduced_cols], has_constant="add")
+    try:
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            full = sm.Logit(y, Xf).fit(disp=0, maxiter=200)
+            red = sm.Logit(y, Xr).fit(disp=0, maxiter=200)
+        coef = float(full.params[-1])
+        se = float(full.bse[-1])
+        stat = 2.0 * (float(full.llf) - float(red.llf))
+        lrt_p = float(chi2.sf(stat, 1)) if np.isfinite(stat) and stat >= 0 else float("nan")
+        return {"coef": coef, "se": se, "lrt_p": lrt_p}
+    except Exception:  # noqa: BLE001 - a non-converging refit is a real outcome here
+        return {"coef": float("nan"), "se": float("nan"), "lrt_p": float("nan")}
+
+
 def _likelihood_ratio_p(X, y, cand_idx: int) -> float:
-    """Likelihood-ratio test for one column, by refitting without it.
-
-    Computed here rather than taken from firthlogist because both of that
-    library's inference outputs were measured unreliable at this covariate
-    dimensionality (module docstring). Refitting the reduced model and
-    differencing log-likelihoods is slower but is a statistic whose behaviour
-    is known.
-
-    Uses unpenalised logistic regression: the LRT is the quantity being
-    compared, and a penalised fit would change the null distribution of the
-    test statistic without a corresponding correction.
+    """Backwards-compatible wrapper around `_independent_fit` returning only
+    the p-value. Prefer `_independent_fit` in new code -- it does the same
+    refit once and also returns the coefficient, instead of fitting twice.
     """
     import numpy as np
     import statsmodels.api as sm
@@ -164,11 +197,20 @@ def firth_association(
     The candidate is appended as the last column, so its coefficient and
     p-value sit at index `st_dummies.shape[1]`.
 
-    Requires the `firthlogist` package (Python <3.11, scikit-learn <1.6 as of
-    this writing — see docs/reproducibility/open_items.md for the dependency
-    conflict this project hit and how it was resolved).
+    Does NOT require `firthlogist`. The base fit and the p-value are always
+    computed by `_independent_fit` (plain `statsmodels`, no Firth penalty) --
+    see that function's docstring for why this is the required computation,
+    not a fallback. Where `firthlogist` (Python <3.11, scikit-learn <1.6 --
+    see §5.14) *is* importable, it is fit as well and its coefficient is
+    preferred, since Firth's penalty gives a more stable point estimate close
+    to separation; the independent p-value is used either way. Its own
+    p-value/standard-error outputs are never read (module docstring: neither
+    was found reliable at this covariate dimensionality).
     """
-    from firthlogist import FirthLogisticRegression
+    try:
+        from firthlogist import FirthLogisticRegression
+    except ImportError:
+        FirthLogisticRegression = None
 
     if candidate not in df.columns:
         raise CladeInputError(f"candidate '{candidate}' is not a column in the input frame.")
@@ -209,9 +251,29 @@ def firth_association(
     sep = check_separation(cand, pheno)
 
     try:
-        fl = FirthLogisticRegression(test_vars=cand_idx)
-        fl.fit(X, y)
-        coef = fl.coef_[cand_idx]
+        # Base computation: always run, never dependent on firthlogist.
+        # Supplies both the p-value (used unconditionally) and the
+        # coefficient (used unless a working Firth fit overrides it below).
+        fit = _independent_fit(X, y, cand_idx)
+        coef = fit["coef"]
+        pval = fit["lrt_p"]
+        engine = "statsmodels (unpenalised, independent)"
+
+        # Optional refinement: prefer Firth's coefficient when available and
+        # finite. Its p-value/bse_ are still never read (see module docstring).
+        if FirthLogisticRegression is not None:
+            try:
+                fl = FirthLogisticRegression(test_vars=cand_idx)
+                fl.fit(X, y)
+                firth_coef = fl.coef_[cand_idx]
+                if not is_missing(firth_coef):
+                    coef = firth_coef
+                    engine = "firthlogist coefficient + independent LRT p-value"
+            except Exception:  # noqa: BLE001, S110 - Firth failing to converge is
+                # not fatal; the independent fit above already stands, and there
+                # is nothing candidate-specific worth logging at this volume.
+                pass
+
         if is_missing(coef):
             return {
                 "Candidate": candidate,
@@ -222,13 +284,6 @@ def firth_association(
                 "Status": "FAILED: non-finite estimate",
                 **sep,
             }
-
-        # The p-value comes from an independent likelihood-ratio test, not from
-        # firthlogist. Neither `pvals_` nor a Wald statistic built on `bse_` is
-        # trustworthy here -- see the module docstring for the measurements.
-        # The Firth coefficient is retained for DIRECTION only (Stage 3), where
-        # its sign is reliable even when its magnitude is not.
-        pval = _likelihood_ratio_p(X, y, cand_idx)
 
         status = "OK"
         if sep["separation"] == "complete":
@@ -244,6 +299,10 @@ def firth_association(
             "Coef": float(coef),
             "Firth_p": None if pval is None or is_missing(pval) else float(pval),
             "Status": status,
+            # Which fit produced Coef, for audit -- distinct from Status, which
+            # the CLI matches on exactly ("OK") to decide Stage 1's verdict and
+            # must therefore stay a fixed vocabulary, not carry free text.
+            "Engine": engine,
             **sep,
         }
     except Exception as e:  # noqa: BLE001 - real convergence failures are the point

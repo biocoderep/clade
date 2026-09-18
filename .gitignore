@@ -91,3 +91,5 @@ firth_bundle/
 firth_dual_pvalue_capture.py
 firth_permutation_null_check.py
 firth_pvalue_arbitration.py
+workflows/nextflow/case_study_data/
+workflows/nextflow/results_case_study/

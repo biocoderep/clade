@@ -20,6 +20,7 @@ nextflow.enable.dsl = 2
 
 include { PER_SAMPLE             } from './subworkflows/per_sample'
 include { AGGREGATE_AND_VALIDATE } from './subworkflows/aggregate_and_validate'
+include { VALIDATE_FROM_MATRIX   } from './subworkflows/validate_from_matrix'
 include { DOWNLOAD               } from './modules/download'
 include { MULTIQC                } from './modules/multiqc'
 include { COLLATE_VERSIONS       } from './modules/collate_versions'
@@ -138,6 +139,27 @@ def validateParams() {
     }
 }
 
+def validateMatrixParams() {
+    def errors = []
+    def required = [
+        'matrix_genotypes': params.matrix_genotypes, 'matrix_phenotype': params.matrix_phenotype,
+        'matrix_lineages' : params.matrix_lineages,  'matrix_candidates': params.matrix_candidates,
+        'matrix_tree'     : params.matrix_tree,      'matrix_distances': params.matrix_distances,
+    ]
+    required.each { name, value ->
+        if (!value) errors << "--${name} is required with --from_matrix"
+        else if (!file(value).exists()) errors << "--${name} does not exist: ${value}"
+    }
+    if (params.alpha <= 0 || params.alpha >= 1)  errors << "--alpha must be between 0 and 1 (got ${params.alpha})"
+    if (params.max_freq <= 0 || params.max_freq > 1) errors << "--max_freq must be in (0,1] (got ${params.max_freq})"
+    if (params.min_carriers < 1)                 errors << "--min_carriers must be >= 1 (got ${params.min_carriers})"
+    if (!(params.ambiguity_resolution in [0, 1])) errors << "--ambiguity_resolution must be 0 or 1 (got ${params.ambiguity_resolution})"
+    if (errors) {
+        log.error "Parameter validation failed:\n  - " + errors.join("\n  - ") + "\n\nRun with --help for usage."
+        System.exit(1)
+    }
+}
+
 def summaryLog() {
     log.info """
     ----------------------------------------------------------------------------
@@ -167,6 +189,36 @@ workflow {
 
     if (params.help)    { helpMessage(); System.exit(0) }
     if (params.version) { log.info "${workflow.manifest.name} v${workflow.manifest.version}"; System.exit(0) }
+
+    if (params.from_matrix) {
+        /*
+         * Skip genome processing entirely: genotype matrix, phenotype,
+         * lineages, phylogeny and distance matrix are already extracted.
+         * This is the entry point this project's real case-study analysis
+         * actually used -- validated by hand against these same files
+         * before this subworkflow existed, so a result that disagrees with
+         * that hand-run is a bug in the pipeline, not a new finding.
+         */
+        validateMatrixParams()
+        log.info "Running in --from_matrix mode: genome processing skipped."
+
+        // Wrapped as value channels, not passed as bare file() objects: a bare
+        // Path fed into a subworkflow's splitCsv() there returns a plain
+        // Groovy List, not a Channel, and List has no .map() -- a real error
+        // this run surfaced (the raw-reads path avoids it because ch_candidates
+        // is already Channel.value(file(...)) before AGGREGATE_AND_VALIDATE
+        // ever sees it).
+        VALIDATE_FROM_MATRIX(
+            Channel.value(file(params.matrix_genotypes, checkIfExists: true)),
+            Channel.value(file(params.matrix_phenotype, checkIfExists: true)),
+            Channel.value(file(params.matrix_lineages,  checkIfExists: true)),
+            Channel.value(file(params.matrix_candidates, checkIfExists: true)),
+            Channel.value(file(params.matrix_tree,      checkIfExists: true)),
+            Channel.value(file(params.matrix_distances, checkIfExists: true)),
+        )
+        COLLATE_VERSIONS(VALIDATE_FROM_MATRIX.out.versions.unique().collectFile(name: 'collated_versions.yml'))
+        return
+    }
 
     validateParams()
     summaryLog()
