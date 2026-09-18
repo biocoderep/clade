@@ -1,14 +1,23 @@
 # 🧬 CLADE
 
+<div align="center">
+
+![CLADE banner](https://capsule-render.vercel.app/api?type=waving&color=0:FF2E88,50:8B5CF6,100:00D4FF&height=220&section=header&text=CLADE&fontSize=75&fontColor=ffffff&fontAlign=50&fontAlignY=35&desc=Clonal-Lineage-Aware%20Detection%20of%20Epistasis&descAlign=50&descAlignY=62&animation=fadeIn)
+
 **Clonal-Lineage-Aware Detection of Epistasis** — a six-stage framework for validating candidate compensatory mutations in clonally reproducing bacterial populations.
 
-[![Tests](https://github.com/biocoderep/clade/actions/workflows/tests.yml/badge.svg)](https://github.com/biocoderep/clade/actions/workflows/tests.yml)
-[![Lint](https://github.com/biocoderep/clade/actions/workflows/lint.yml/badge.svg)](https://github.com/biocoderep/clade/actions/workflows/lint.yml)
-[![Nextflow pipeline](https://github.com/biocoderep/clade/actions/workflows/nextflow-stub-test.yml/badge.svg)](https://github.com/biocoderep/clade/actions/workflows/nextflow-stub-test.yml)
-[![Container](https://github.com/biocoderep/clade/actions/workflows/container.yml/badge.svg)](https://github.com/biocoderep/clade/actions/workflows/container.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
-[![Nextflow DSL2](https://img.shields.io/badge/nextflow-DSL2-23aa62.svg)](workflows/nextflow/)
+[![Typing SVG](https://readme-typing-svg.demolab.com/?font=Fira+Code&size=19&duration=3000&pause=1200&color=8B5CF6&center=true&vCenter=true&width=760&lines=Six+stages.+Zero+shortcuts.;Missing+evidence+%E2%89%A0+negative+evidence.;Caught+a+false+positive+its+own+dataset+produced.;Validated+on+3%2C261+real+genomes.)](#-why-clade)
+
+[![Tests](https://img.shields.io/github/actions/workflow/status/biocoderep/clade/tests.yml?branch=main&style=for-the-badge&logo=pytest&logoColor=white&label=tests&color=FF2E88)](https://github.com/biocoderep/clade/actions/workflows/tests.yml)
+[![Lint](https://img.shields.io/github/actions/workflow/status/biocoderep/clade/lint.yml?branch=main&style=for-the-badge&logo=ruff&logoColor=white&label=lint&color=8B5CF6)](https://github.com/biocoderep/clade/actions/workflows/lint.yml)
+[![Nextflow pipeline](https://img.shields.io/github/actions/workflow/status/biocoderep/clade/nextflow-stub-test.yml?branch=main&style=for-the-badge&logo=nextflow&logoColor=white&label=pipeline&color=00D4FF)](https://github.com/biocoderep/clade/actions/workflows/nextflow-stub-test.yml)
+[![Container](https://img.shields.io/github/actions/workflow/status/biocoderep/clade/container.yml?branch=main&style=for-the-badge&logo=docker&logoColor=white&label=container&color=FFC93C)](https://github.com/biocoderep/clade/actions/workflows/container.yml)
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-8B5CF6.svg?style=for-the-badge)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10+-FF2E88.svg?style=for-the-badge&logo=python&logoColor=white)](pyproject.toml)
+[![Nextflow DSL2](https://img.shields.io/badge/nextflow-DSL2-00D4FF.svg?style=for-the-badge&logo=nextflow&logoColor=white)](workflows/nextflow/)
+
+</div>
 
 This repository is the CLADE software package: the framework code, its CLI, and its test suite. It validates a candidate-locus list supplied to it (genotype matrix + phenotype + lineage assignments + optional phylogeny/distance matrix) — it does not claim to solve population-structure-safe candidate *discovery*. The Nextflow pipeline can generate a candidate list automatically (every biallelic core-genome SNP, unranked) when none is supplied, but that is a documented brute-force fallback, not a statistically validated discovery method — see [`workflows/nextflow/README.md`](workflows/nextflow/README.md).
 
@@ -44,6 +53,7 @@ A single structure-corrected association test reduces this problem but does not 
 ## 🧩 The six-stage framework
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#8B5CF6', 'primaryTextColor': '#fff', 'lineColor': '#8B5CF6', 'fontSize': '15px'}}}%%
 flowchart LR
     S1["1️⃣ Association<br/>structure-corrected"] --> S2["2️⃣ Recurrence<br/>clonal cross-tab"]
     S2 --> S3["3️⃣ Direction<br/>enriched in resistant?"]
@@ -51,8 +61,18 @@ flowchart LR
     S4 --> S5["5️⃣ Matched-neighbor<br/>McNemar"]
     S5 --> S6["6️⃣ Corroboration<br/>manual, literature"]
 
-    classDef stage fill:#6366f1,stroke:#4338ca,color:#fff
-    class S1,S2,S3,S4,S5,S6 stage
+    classDef s1 fill:#FF2E88,stroke:#c81766,color:#fff,rx:10,ry:10
+    classDef s2 fill:#c341e0,stroke:#9526b3,color:#fff,rx:10,ry:10
+    classDef s3 fill:#8B5CF6,stroke:#6d3fd1,color:#fff,rx:10,ry:10
+    classDef s4 fill:#5b6ff2,stroke:#3d4fd1,color:#fff,rx:10,ry:10
+    classDef s5 fill:#2ea0f2,stroke:#1a7fc9,color:#fff,rx:10,ry:10
+    classDef s6 fill:#00D4FF,stroke:#00a8cc,color:#0b1220,rx:10,ry:10
+    class S1 s1
+    class S2 s2
+    class S3 s3
+    class S4 s4
+    class S5 s5
+    class S6 s6
 ```
 
 | Stage | Checks | Catches |
@@ -68,13 +88,13 @@ flowchart LR
 
 A candidate is reported as **convergent** only if it passes every applicable stage. Every candidate that enters the framework is classified, not just the survivors:
 
-![convergent](https://img.shields.io/badge/convergent-brightgreen)
-![unresolved](https://img.shields.io/badge/unresolved-yellow)
-![rejected](https://img.shields.io/badge/rejected-red)
-![clonal_artifact](https://img.shields.io/badge/clonal__artifact-orange)
-![uninformative](https://img.shields.io/badge/uninformative-lightgrey)
-![insufficient_evidence](https://img.shields.io/badge/insufficient__evidence-blue)
-![not_individually_retested](https://img.shields.io/badge/not__individually__retested-inactive)
+![convergent](https://img.shields.io/badge/convergent-00E676?style=for-the-badge)
+![unresolved](https://img.shields.io/badge/unresolved-FFC93C?style=for-the-badge)
+![rejected](https://img.shields.io/badge/rejected-FF3D57?style=for-the-badge)
+![clonal_artifact](https://img.shields.io/badge/clonal__artifact-FF8A3D?style=for-the-badge)
+![uninformative](https://img.shields.io/badge/uninformative-9CA3AF?style=for-the-badge)
+![insufficient_evidence](https://img.shields.io/badge/insufficient__evidence-00D4FF?style=for-the-badge)
+![not_individually_retested](https://img.shields.io/badge/not__individually__retested-6b7280?style=for-the-badge)
 
 | Disposition | Meaning |
 |---|---|
@@ -264,3 +284,9 @@ MIT — see [`LICENSE`](LICENSE).
 | [`scripts/`](scripts/) | Standalone diagnostic/calibration tools, run by hand, not wired into any pipeline module — each documents a specific investigation (e.g. effective test count under candidate correlation, empirical FDR calibration) |
 | [`containers/`](containers/) | `Dockerfile` for the `clade` image, built and published by CI |
 | [`.github/`](.github/) | CI workflows (tests, lint, pipeline stub-run, container build), issue templates, PR template |
+
+<div align="center">
+
+![footer](https://capsule-render.vercel.app/api?type=waving&color=0:00D4FF,50:8B5CF6,100:FF2E88&height=120&section=footer)
+
+</div>
