@@ -41,7 +41,7 @@ process DETECT_RESISTANCE_GENE {
     stub:
     """
     echo "stub_gene" > resistance_gene.txt
-    touch resistance_gene_candidates.tsv
+    printf "gene\\tn_carriers\\tprevalence\\n" > resistance_gene_candidates.tsv
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         clade: ${workflow.manifest.version}

@@ -13,7 +13,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  test-with-firth:
+    name: Tests (firthlogist installed)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,4 +27,35 @@ jobs:
         run: pip install -e ".[firth,dev]"
 
       - name: Run test suite (synthetic fixtures only — no real dataset required)
+        run: pytest tests/ -v
+
+  test-without-firth:
+    # Stage 1 must degrade gracefully, not fail, when firthlogist is absent --
+    # it is an optional dependency (Python <3.11 only) and this is the default
+    # state for anyone who ran a plain `pip install clade`, not the exception.
+    # This job exists because the previous CI configuration always installed
+    # firthlogist and so could never have caught a real regression on the
+    # no-firthlogist path: the CLI matched Stage 1's Status field against the
+    # literal string "OK", which broke silently once the coefficient started
+    # coming from an independent statsmodels fit instead -- on any Python
+    # version, with or without firthlogist, but only visible once firthlogist
+    # was actually absent. Found only by running the pipeline for real, not by
+    # this suite; added here so the next version of that bug fails a PR
+    # instead of a real run.
+    name: Tests (no firthlogist -- the common case)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CLADE (core + dev tools only, no firth extra)
+        run: pip install -e ".[dev]"
+
+      - name: Confirm firthlogist is genuinely absent
+        run: python -c "import firthlogist" && exit 1 || echo "confirmed absent"
+
+      - name: Run test suite
         run: pytest tests/ -v

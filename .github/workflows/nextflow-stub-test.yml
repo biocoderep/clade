@@ -53,6 +53,96 @@ jobs:
           done
           echo "All expected outputs present."
 
+  auto-discovery:
+    # Reference and raw reads only -- no --candidates, no --resistance_gene.
+    # Exercises DETECT_RESISTANCE_GENE and DISCOVER_CANDIDATES, and confirms
+    # FINAL_VERDICT.md is produced at the end. Passed via -params-file, not
+    # `--candidates ''` on the command line: an empty-string CLI argument is
+    # read by Nextflow as boolean true, not as "omitted" -- a real parsing
+    # quirk found while first testing this path, not a hypothetical one.
+    name: Full auto-discovery (no candidates, no resistance gene)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: nf-core/setup-nextflow@v2
+
+      - name: Write a params file with candidates/resistance_gene explicitly null
+        working-directory: workflows/nextflow
+        run: |
+          cat > auto_params.json <<'EOF'
+          { "candidates": null, "resistance_gene": null }
+          EOF
+
+      - name: Stub-run with auto-discovery, plus every optional deeper-validation stage
+        working-directory: workflows/nextflow
+        run: |
+          nextflow run main.nf -profile test -stub-run \
+            -params-file auto_params.json \
+            --run_stage5_conditional --run_fwer_permutation --run_benchmark
+
+      - name: Check auto-discovery and the final verdict were produced
+        working-directory: workflows/nextflow
+        run: |
+          for f in results/detect_resistance_gene/resistance_gene_candidates.tsv \
+                   results/discover_candidates/candidates.csv \
+                   results/clade/FINAL_VERDICT.md \
+                   results/clade/stage5_conditional/stage5_conditional.tsv \
+                   results/clade/fwer_permutation/fwer_permutation.txt \
+                   results/clade/benchmark/benchmark_single_test.tsv; do
+            [ -s "$f" ] || { echo "MISSING or empty: $f"; exit 1; }
+          done
+          echo "Auto-discovery and all optional stages produced their outputs."
+
+  from-matrix:
+    # The entry point that skips genome processing entirely, given an
+    # already-extracted genotype matrix, phenotype, lineages, tree and
+    # distance matrix -- the state this project's real case-study analysis
+    # was actually run from. Minimal but genuinely distinct six input files,
+    # not the same placeholder reused six times (that produced a filename
+    # collision the first time this was tried by hand, not a wiring bug).
+    name: --from_matrix entry point
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: nf-core/setup-nextflow@v2
+
+      - name: Build minimal distinct placeholder inputs
+        working-directory: workflows/nextflow
+        run: |
+          mkdir -p fm_test
+          printf "Sample_ID,x\ns1,1\n"      > fm_test/geno.csv
+          printf "sample\ts1\n"             > fm_test/pheno.tsv
+          printf "sample\ts1\n"             > fm_test/lineages.tsv
+          printf "name,position\nx,1\n"     > fm_test/cand.csv
+          printf "(s1);\n"                  > fm_test/tree.nwk
+          printf "\ts1\ns1\t0\n"            > fm_test/dist.tsv
+
+      - name: Stub-run --from_matrix with every optional deeper-validation stage
+        # --max_cpus/--max_memory explicit here: this entry point bypasses
+        # -profile test (which sets raw-reads-mode params that don't apply to
+        # --from_matrix), so without them the run inherits nextflow.config's
+        # top-level default (max_cpus 8) rather than a runner-appropriate
+        # ceiling -- a real "Process requirement exceeds available CPUs"
+        # failure on GitHub's standard 4-core runners, found by replicating
+        # this exact job locally before trusting it, not assumed safe.
+        working-directory: workflows/nextflow
+        run: |
+          nextflow run main.nf -stub-run --from_matrix \
+            --matrix_genotypes fm_test/geno.csv \
+            --matrix_phenotype fm_test/pheno.tsv \
+            --matrix_lineages fm_test/lineages.tsv \
+            --matrix_candidates fm_test/cand.csv \
+            --matrix_tree fm_test/tree.nwk \
+            --matrix_distances fm_test/dist.tsv \
+            --run_stage5_conditional --run_fwer_permutation --run_benchmark \
+            --max_cpus 2 --max_memory 6.GB
+
+      - name: Check the final verdict was produced
+        working-directory: workflows/nextflow
+        run: |
+          [ -s results/clade/FINAL_VERDICT.md ] || { echo "MISSING: FINAL_VERDICT.md"; exit 1; }
+          echo "from_matrix entry point produced a final verdict."
+
   config-profiles:
     name: Every profile resolves
     runs-on: ubuntu-latest

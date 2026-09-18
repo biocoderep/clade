@@ -2,6 +2,127 @@
 
 All notable changes to CLADE are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased] — statistical defects found by measurement, and a fully automatic pipeline
+
+Everything below was found or verified by actually running the framework
+against real data, not by inspection — each entry says what broke, how it was
+caught, and how it was confirmed fixed.
+
+### Fixed — scientific correctness
+
+- **`firthlogist`'s `bse_` (standard error) is unreliable at this covariate
+  dimensionality, not just its `pvals_`.** An earlier fix replaced the
+  library's profile-likelihood p-value with a manually-computed Wald p-value
+  from `coef_`/`bse_`. Measured directly against an independent, unpenalised
+  likelihood-ratio fit on 37 real candidates: `bse_` varies only 1.3x across
+  all of them (0.120–0.156) while the true standard error varies 163,000x
+  (0.144–23,531), and the two are essentially uncorrelated (r=-0.18). A
+  100-permutation null-calibration run using the Wald statistic found 16–20.5
+  of 37 candidates significant under a true null, where Benjamini-Hochberg
+  should give approximately zero. Stage 1 now computes its own
+  likelihood-ratio test via `statsmodels.Logit`, using no `firthlogist` output
+  for inference; `firthlogist`'s coefficient is used for direction only when
+  the library is importable, and is no longer required — see the next entry.
+- **Stage 1 could not run at all without `firthlogist` installed.** The
+  coefficient still came from an unconditional `FirthLogisticRegression`
+  import, so on any machine without it (Python >=3.11, where the package
+  cannot build) every candidate failed with an opaque `ImportError`. Found by
+  running the packaged CLI on this machine's own Python 3.12 environment.
+  `_independent_fit()` is now the required computation (`statsmodels`, no
+  `firthlogist` dependency); the library is used only as an optional
+  refinement when present.
+- **Stage 5's matched-pair test used one control genome for 1,491 of 2,492
+  pairs on the real case-study cohort** — 83% of matches were exact distance
+  ties, and the deterministic tie-break sent them all to the same handful of
+  controls. McNemar's test assumes independent pairs; this reproduced the
+  manuscript's published p=4.2e-11 exactly under the flawed method, confirming
+  the mechanism. Fixed two ways: ties are now spread across every equally-near
+  control rather than always the first (raised unique controls 61 -> 302 on
+  the real cohort), and a new conditional-logistic-regression analysis
+  (`stage5_conditional.py`, stratified by control genome via a Cox fit) is
+  available as the defensible statistic where reuse remains high.
+- **A single reconstructed Stage 4 origin was accepted as evidence of temporal
+  ordering.** One event is trivially 0% or 100% "post-resistance" and cannot
+  establish a pattern; several case-study candidates were reported at "100%
+  post-resistance" on exactly one origin. `stage4_supports()` now requires
+  `min_origins` (default 2) and returns not-evaluable below it.
+- **`stage5_supports()` conflated "underpowered" with "contradicted".** A
+  non-significant Stage 5 result — correctly signed but not significant — was
+  mapped to the same explicit-contradiction state as a significantly
+  wrong-signed one. Found while verifying the conditional-Stage-5 fix above by
+  running the disposition code directly: a candidate with three of four
+  required stages passing and a genuine non-significant (not contradictory)
+  Stage 5 was coming back `REJECTED` instead of `INSUFFICIENT_EVIDENCE`. Now
+  only a significant, wrong-signed result counts as a contradiction.
+- **The CLI matched Stage 1's `Status` field against the literal string
+  `"OK"`.** Adding engine provenance to that same string (to record whether a
+  candidate's coefficient came from `firthlogist` or the independent fit)
+  silently broke the match for every candidate. Moved provenance to its own
+  `Engine` field; the CLI's check now uses the actual signal
+  (`Firth_p is not None`), which also correctly stopped collapsing a
+  quasi-separated candidate (a handful of cases in the minority cell) into
+  "no estimate" the same as a completely separated one — a real, previously
+  silent gap between two candidates the framework should have told apart.
+
+### Added
+
+- **A fully automatic pipeline mode.** `--candidates` and `--resistance_gene`
+  are now optional. Omitted, `DETECT_RESISTANCE_GENE` picks the acquired-AMR
+  gene closest to 50% cohort prevalence from the cohort's own AMRFinderPlus
+  calls (most statistical power for every downstream stage; reported in full
+  and overridable, not a validated phenotype assignment), and
+  `DISCOVER_CANDIDATES` generates an unranked, genome-wide candidate list
+  directly from `core.vcf` — every biallelic core-genome SNP becomes one
+  candidate, deliberately making no ranking claim, unlike the project's
+  original invalid MI/DCA discovery step. Verified against real data: the
+  gene-detector picked a 51.3%-prevalence gene over a 76.7%-prevalence one
+  from 300 real samples' real AMR calls (the point, not a bug); the
+  candidate-discoverer emitted 5,783 candidates from the real 44MB
+  `core.vcf`, including HTZ92_2925 M21L's own position, with no candidate
+  list supplied.
+- **`final_verdict.py` / `FINAL_VERDICT.md`** — the pipeline's last word,
+  stated once: `CONVERGENT`, `NOMINATED FOR FOLLOW-UP (not confirmed)`, or
+  `NO CANDIDATE`. The three-way rule mirrors
+  `clade.classification.disposition` exactly. Verified against the real
+  case-study evidence table (correctly nominates HTZ92_2925 M21L and no one
+  else) and two synthetic edge cases (forced all-rejected, forced convergent).
+- **`--from_matrix`** — an entry point for cohorts already past genome
+  processing (genotype matrix, phenotype, lineages, tree, distance matrix
+  already extracted), which is the state this project's real case-study
+  analysis was actually run from. Runs the identical validation modules as
+  the raw-reads path; only genome processing is skipped. Verified end to end
+  against the real 3,254-genome cohort (2m20s, not stubbed): reproduces every
+  published number to the decimal, including HTZ92_2925 M21L's conditional
+  Stage 5 p=0.340 against a naive p=4.19e-11 that matches the manuscript
+  exactly.
+- **`stage5_conditional.py`, `fwer_permutation.py`, `benchmark_single_test.py`**
+  as optional Nextflow stages (`--run_stage5_conditional`,
+  `--run_fwer_permutation`, `--run_benchmark`) — the conditional matched-pair
+  re-analysis above; a lineage-preserving permutation estimate of the whole
+  six-stage screen's family-wise error rate (0.02–0.05 across 100
+  permutations on the real cohort, at or below nominal, measured after the
+  Stage 1 fixes above — the screen is calibrated even though its first-fitted
+  Stage 1 was not); and a labelled reimplementation of a conventional
+  single-test pipeline for comparison (16–17 apparent hits on the real
+  cohort, several separated, zero CLADE-convergent).
+- **`interactive_stage6.py`** — the one stage CLADE does not automate.
+  Refuses to run without a real terminal rather than producing silent empty
+  output; records y/n/unknown per candidate to `stage6.json` after every
+  answer (safe to quit and `--resume`); explicit that its findings can adjust
+  bookkeeping but cannot promote a `REJECTED` or `INSUFFICIENT_EVIDENCE`
+  verdict to `CONVERGENT`.
+- CI: a second `tests.yml` job installs with no `firthlogist` at all and
+  confirms it is genuinely absent before running the suite — the previous
+  single job always installed the `firth` extra and so could never have
+  caught the no-firthlogist regression above. `lint.yml` now also checks
+  `workflows/nextflow/bin/*.py`. `nextflow-stub-test.yml` gained two jobs:
+  full auto-discovery with every optional stage enabled, and `--from_matrix`
+  with every optional stage enabled — both replicated locally before being
+  trusted, which caught a real "Process requirement exceeds available CPUs"
+  failure the `--from_matrix` job would otherwise have hit on every run
+  (that entry point bypasses `-profile test`'s resource ceiling and
+  inherited the top-level 8-cpu default).
+
 ## [Unreleased] — implementation review
 
 A technical/scientific review of the implementation against the manuscript
