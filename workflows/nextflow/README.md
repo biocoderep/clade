@@ -54,7 +54,7 @@ system.** Mismatched coordinates fail silently — the variant is simply absent
 from every sample, and the candidate is reported as untestable rather than as
 an error.
 
-### `--candidates`
+### `--candidates` (optional)
 
 ```csv
 name,position
@@ -62,16 +62,49 @@ htz92_2925_m21l,3155360
 aminotransferase,3712044
 ```
 
-CLADE *validates* a candidate list. It does not generate one. Where the list
-came from does not matter — that is the point: a list from an
-inadequately-corrected discovery method can still be assessed honestly here.
+CLADE *validates* a candidate list; it does not itself claim to solve
+population-structure-safe candidate *discovery*. Where the list came from
+does not matter — that is the point: a list from an inadequately-corrected
+discovery method can still be assessed honestly here.
 
-### `--resistance_gene`
+If `--candidates` is omitted, `DISCOVER_CANDIDATES` generates one
+automatically from `core.vcf`: every biallelic, non-monomorphic,
+low-missingness core-genome SNP, unranked. This is a brute-force fallback,
+not a statistically validated discovery method — see
+`bin/discover_candidates.py`.
+
+### `--resistance_gene` (optional)
 
 The AMRFinderPlus gene symbol that defines the binary phenotype (`blaOXA-23`).
 The phenotype is derived programmatically from AMRFinderPlus output rather than
 supplied as a curated file, because a hand-maintained phenotype file is a
 well-known source of silent error.
+
+If `--resistance_gene` is omitted, `DETECT_RESISTANCE_GENE` picks the gene
+whose carriage prevalence across the cohort is closest to 50% (bounded by
+`--auto_gene_min_prevalence`/`--auto_gene_max_prevalence`) — a documented
+heuristic, not a validated phenotype assignment. Always check
+`resistance_gene_candidates.tsv` in the output. See
+`bin/detect_resistance_gene.py`.
+
+### `--from_matrix` (alternate entry point)
+
+Skips genome processing (alignment, variant calling, phylogeny, distances)
+entirely, for when you already have those artifacts — the state this
+project's own real case-study analysis was actually run from:
+
+```bash
+nextflow run main.nf --from_matrix \
+  --matrix_genotypes genotypes.csv \
+  --matrix_phenotype phenotype.tsv \
+  --matrix_lineages lineages.tsv \
+  --matrix_tree tree.nwk \
+  --matrix_distances distances.tsv \
+  --matrix_candidates candidates.csv   # omit for auto-discovery, as above
+```
+
+Bypasses `-profile test`'s resource ceiling, so set `--max_cpus`/`--max_memory`
+explicitly if not running on a large machine.
 
 ---
 
@@ -80,8 +113,11 @@ well-known source of silent error.
 ```
 results/
 ├── clade/
-│   ├── clade_evidence_table.md      <- the result
+│   ├── FINAL_VERDICT.md             <- CONVERGENT / NOMINATED / NO CANDIDATE, per candidate
+│   ├── clade_evidence_table.md      <- the full per-stage evidence
 │   └── clade_evidence_table.tsv
+├── detect_resistance_gene/          only when --resistance_gene was omitted
+├── discover_candidates/             only when --candidates was omitted
 ├── clade_input/                     genotypes.csv, pheno.tsv, lineages.tsv
 ├── variants/core/                   core.aln, core.full.aln, core.vcf
 ├── phylogeny/                       tree.nwk, distances.tsv
@@ -94,6 +130,13 @@ results/
     ├── execution_trace.txt
     └── pipeline_dag.html
 ```
+
+`FINAL_VERDICT.md` folds every stage (including a conditional Stage 5 result,
+when `--run_stage5_conditional` was set and the built-in Stage 5 was withheld
+for insufficient power) into the same three-way verdict as
+`clade.classification.disposition`. It is not a substitute for Stage 6: a
+`NOMINATED FOR FOLLOW-UP` verdict still needs the manual corroboration step
+below before it can be called `CONVERGENT`.
 
 `software_versions.yml` is the file that makes a run reproducible. It records
 the exact version of every tool that touched the data, collected from the
@@ -200,6 +243,17 @@ asserting evidence it had not gathered. Supply findings via `--stage6` as JSON:
 
 `true` = support found, `false` = searched and none found, `null` = not
 assessed. Absent the file, Stage 6 is recorded as missing — never as passed.
+
+`bin/interactive_stage6.py` is a terminal walkthrough that builds this JSON
+one candidate at a time (y/n/unknown, resumable via `--resume`). It refuses
+to run outside an interactive terminal and is deliberately not wired into
+any `.nf` module — run it by hand between a validation run and a rerun with
+`--stage6`:
+
+```bash
+python3 bin/interactive_stage6.py results/clade/clade_evidence_table.tsv --output stage6.json
+nextflow run main.nf -profile docker ... --stage6 stage6.json -resume
+```
 
 ---
 

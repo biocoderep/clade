@@ -2,7 +2,7 @@
 
 **Clonal-Lineage-Aware Detection of Epistasis** — a six-stage framework for validating candidate compensatory mutations in clonally reproducing bacterial populations.
 
-This repository is the CLADE software package: the framework code, its CLI, and its test suite. It validates a candidate-locus list supplied to it (genotype matrix + phenotype + lineage assignments + optional phylogeny/distance matrix) — it does not claim to solve population-structure-safe candidate *discovery*.
+This repository is the CLADE software package: the framework code, its CLI, and its test suite. It validates a candidate-locus list supplied to it (genotype matrix + phenotype + lineage assignments + optional phylogeny/distance matrix) — it does not claim to solve population-structure-safe candidate *discovery*. The Nextflow pipeline can generate a candidate list automatically (every biallelic core-genome SNP, unranked) when none is supplied, but that is a documented brute-force fallback, not a statistically validated discovery method — see [`workflows/nextflow/README.md`](workflows/nextflow/README.md).
 
 ## Overview
 

@@ -92,6 +92,7 @@ credentials.json
 .nextflow*
 work/
 workflows/nextflow/test_results/
+workflows/nextflow/test_trace.txt
 workflows/nextflow/results/
 
 # --- Manuscript, submission package and case-study data -----------------

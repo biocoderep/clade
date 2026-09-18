@@ -17,6 +17,11 @@ lineages: mlst_final.tsv
 tree: tree.nwk                         # SNP-only-alignment-derived — see
                                         # docs/limitations/phylogenetic_alignment_sensitivity.md
 distances: distances_final.tsv
+# NOTE: SecA_M21L is the candidate name as it was known when this run was
+# made. A later gene-identity check found the actual annotation at this
+# position is HTZ92_2925 (i.e. HTZ92_2925_M21L), not SecA -- see
+# CHANGELOG.md. Left as-is here to keep this an accurate record of what
+# was actually run, not a retroactively corrected one.
 candidates:
   - SecA_M21L
   - DnaA_syn
